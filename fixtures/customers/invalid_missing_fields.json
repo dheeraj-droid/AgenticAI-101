@@ -1,0 +1,31 @@
+{
+  "record_id": "CUST-5005",
+  "company_name": "Q",
+  "tier": "enterprise",
+  "region": "other",
+  "primary_contact": {
+    "full_name": "",
+    "email": "unknown@example.com",
+    "phone": "n/a",
+    "title": null
+  },
+  "additional_contacts": [],
+  "products": [],
+  "commercial_terms": {
+    "annual_contract_value_usd": "0",
+    "currency": "USD",
+    "declared_discounts": [
+      {
+        "label": "unapproved goodwill credit",
+        "kind": "percent",
+        "value": "150",
+        "approved_by": ""
+      }
+    ],
+    "contract_start": "2026-01-05",
+    "term_months": 12
+  },
+  "signup_notes": "Record was imported from the legacy CRM and is known to be incomplete. Sales rep left the company before completing the handover.",
+  "requested_go_live": "2026-01-10",
+  "source_system": "legacy-import"
+}

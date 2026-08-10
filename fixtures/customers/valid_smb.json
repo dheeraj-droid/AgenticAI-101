@@ -1,0 +1,31 @@
+{
+  "record_id": "CUST-1001",
+  "company_name": "Brightleaf Coffee Roasters",
+  "tier": "growth",
+  "region": "us",
+  "primary_contact": {
+    "full_name": "Dana Whitfield",
+    "email": "dana.whitfield@brightleafcoffee.com",
+    "phone": "+1 415 555 0142",
+    "title": "Head of Operations"
+  },
+  "additional_contacts": [
+    {
+      "full_name": "Marcus Ortega",
+      "email": "marcus.ortega@brightleafcoffee.com",
+      "phone": "+1 415 555 0177",
+      "title": "IT Manager"
+    }
+  ],
+  "products": ["core", "analytics", "api"],
+  "commercial_terms": {
+    "annual_contract_value_usd": "42000",
+    "currency": "USD",
+    "declared_discounts": [],
+    "contract_start": "2026-09-01",
+    "term_months": 12
+  },
+  "signup_notes": "The team is migrating from a spreadsheet-based workflow. They want the analytics dashboards ready before their autumn wholesale push, and asked whether we can help import three years of historical order data.",
+  "requested_go_live": "2026-10-15",
+  "source_system": "web-signup"
+}

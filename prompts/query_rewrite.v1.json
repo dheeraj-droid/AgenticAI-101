@@ -1,0 +1,27 @@
+{
+  "id": "query_rewrite",
+  "version": 1,
+  "status": "active",
+  "role": "user",
+  "description": "Context-aware expansion of the bare task into an explicit instruction. The deterministic expansion in core/planning.rewrite_query is authoritative; this prompt documents the same expansion for the tool-using LangChain agent.",
+  "template": "Restate the onboarding task below as one explicit, self-contained instruction that names the tier, region, products and any date constraint. Add no facts that are not already present.\n\nTASK\n{{bare_task}}\n\nKNOWN CONTEXT\nTier: {{tier}}\nRegion: {{region}}\nProducts: {{product_list}}\nTarget go-live: {{go_live}}\n\nOUTPUT\nA single JSON object, nothing else:\n{\"rewritten\": \"<one sentence>\"}",
+  "allowed_variables": [
+    "bare_task",
+    "tier",
+    "region",
+    "product_list",
+    "go_live"
+  ],
+  "required_variables": [
+    "bare_task",
+    "tier"
+  ],
+  "policy_refs": [
+    "POLICY.NO_FABRICATED_DISCOUNTS"
+  ],
+  "concepts": [
+    "Query rewriting & expansion",
+    "Context-aware prompt enhancement"
+  ],
+  "checksum": "sha256:022eef86c6063a409965765c4cafd9b2e8fe53ea79c6849022cd242c126aee78"
+}

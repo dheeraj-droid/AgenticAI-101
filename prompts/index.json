@@ -1,0 +1,8 @@
+{
+  "system_policy": 1,
+  "welcome_email": 2,
+  "repair_discount": 1,
+  "task_enrichment": 1,
+  "query_rewrite": 1,
+  "agent_instructions": 1
+}

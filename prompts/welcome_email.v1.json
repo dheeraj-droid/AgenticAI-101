@@ -1,0 +1,27 @@
+{
+  "id": "welcome_email",
+  "version": 1,
+  "status": "deprecated",
+  "role": "user",
+  "description": "First cut of the welcome-email prompt. Superseded by v2, which adds explicit chain-of-thought planning and the structured output contract. Kept on disk as history \u2014 index.json pins v2.",
+  "template": "Write a welcome email for our new customer.\n\nCompany: {{company_name}}\nTier: {{tier}}\nProducts: {{product_list}}\nContact: {{masked_contact}}\n\n{{declared_discounts_block}}\n\nReply with JSON: {\"subject\": \"...\", \"body\": \"...\"}",
+  "allowed_variables": [
+    "company_name",
+    "tier",
+    "product_list",
+    "masked_contact",
+    "declared_discounts_block"
+  ],
+  "required_variables": [
+    "company_name",
+    "tier",
+    "declared_discounts_block"
+  ],
+  "policy_refs": [
+    "POLICY.NO_FABRICATED_DISCOUNTS"
+  ],
+  "concepts": [
+    "Prompt libraries & versioning"
+  ],
+  "checksum": "sha256:bc7db80d98a348f64e29f317a063e7a1a2509d0f3f18e6e947da946e00cd6082"
+}

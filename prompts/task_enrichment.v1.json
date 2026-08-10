@@ -1,0 +1,32 @@
+{
+  "id": "task_enrichment",
+  "version": 1,
+  "status": "active",
+  "role": "user",
+  "description": "Optional enrichment of the deterministic internal task list. The rule-derived tasks are authoritative; anything the model adds is marked origin=llm and is excluded from cross-framework equality checks.",
+  "template": "Our onboarding checklist for this customer was generated from policy:\n\n{{existing_tasks}}\n\nCONTEXT\nCompany: {{company_name}}\nTier: {{tier}}\nRegion: {{region}}\nProducts: {{product_list}}\n\nCUSTOMER-SUPPLIED NOTES\n{{untrusted_notes}}\n\nSuggest at most {{max_tasks}} ADDITIONAL internal tasks that the checklist above genuinely misses, based only on the context and notes. Rules:\n- Do not repeat, rename or restate an existing task.\n- Internal work only \u2014 never a task that promises the customer anything.\n- No task about pricing, discounts or credits.\n- If nothing is missing, return an empty list. That is a good answer.\n\nOUTPUT\nA single JSON object, nothing else:\n{\"tasks\": [{\"title\": \"...\", \"owner_role\": \"ops|csm|se|legal|security|support\", \"due_offset_days\": 1, \"priority\": \"p0|p1|p2\"}]}",
+  "allowed_variables": [
+    "existing_tasks",
+    "company_name",
+    "tier",
+    "region",
+    "product_list",
+    "untrusted_notes",
+    "max_tasks"
+  ],
+  "required_variables": [
+    "existing_tasks",
+    "company_name",
+    "tier",
+    "max_tasks"
+  ],
+  "policy_refs": [
+    "POLICY.NO_FABRICATED_DISCOUNTS",
+    "POLICY.PROMPT_INJECTION"
+  ],
+  "concepts": [
+    "Agent loop: Action",
+    "Workflow decomposition"
+  ],
+  "checksum": "sha256:37dfda324b2b5b65fd55546d2a8e8698b7c6fac7b72dd61d3c3fb470c16215c7"
+}
