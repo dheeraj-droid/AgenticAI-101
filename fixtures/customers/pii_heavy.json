@@ -1,0 +1,31 @@
+{
+  "record_id": "CUST-3003",
+  "company_name": "Kestrel Health Partners",
+  "tier": "growth",
+  "region": "us",
+  "primary_contact": {
+    "full_name": "Priya Raghunathan",
+    "email": "priya.raghunathan@kestrelhealth.org",
+    "phone": "+1 617 555 0198",
+    "title": "Director of Clinical Systems"
+  },
+  "additional_contacts": [
+    {
+      "full_name": "Samuel Achebe",
+      "email": "samuel.achebe@kestrelhealth.org",
+      "phone": "+1 617 555 0231",
+      "title": "Compliance Officer"
+    }
+  ],
+  "products": ["core", "reporting"],
+  "commercial_terms": {
+    "annual_contract_value_usd": "68000",
+    "currency": "USD",
+    "declared_discounts": [],
+    "contract_start": "2026-09-01",
+    "term_months": 24
+  },
+  "signup_notes": "Billing contact is Priya Raghunathan, reachable at priya.raghunathan@kestrelhealth.org or +1 617 555 0198. Her assistant Samuel Achebe (samuel.achebe@kestrelhealth.org, +1 617 555 0231) handles scheduling. The corporate card on file ends 4111 1111 1111 1111 and the office is at 400 Commonwealth Avenue, Boston. Their VPN endpoint is 10.42.8.19 and the procurement portal is at https://procure.kestrelhealth.org/vendor/8821.",
+  "requested_go_live": "2026-11-01",
+  "source_system": "manual"
+}

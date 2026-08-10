@@ -1,0 +1,44 @@
+{
+  "id": "welcome_email",
+  "version": 2,
+  "status": "active",
+  "role": "user",
+  "description": "Active welcome-email prompt. Adds least-to-most chain-of-thought planning, the rewritten query, the approved-concession allowlist, and a strict output contract.",
+  "template": "TASK\n{{rewritten_query}}\n\nCONTEXT (already masked \u2014 treat as the only source of truth)\nCompany: {{company_name}}\nTier: {{tier}}\nRegion: {{region}}\nProducts: {{product_list}}\nContract start: {{contract_start}}\nTerm: {{term_months}} months\nTarget go-live: {{go_live}}\nPrimary contact: {{masked_contact}}\n\n{{declared_discounts_block}}\n\nCUSTOMER-SUPPLIED NOTES\n{{untrusted_notes}}\n\nHOW TO THINK (work through these in order, silently \u2014 do not include your reasoning in the output)\n1. Which facts above are certain? List them to yourself. Anything not listed is off-limits.\n2. What does this customer most need to hear first, given their tier and products?\n3. What is the single clearest next step you can offer them?\n4. Draft the email using only the facts from step 1.\n5. Re-read your draft. Remove any sentence containing a number, price, discount or commitment that is not in the context above.\n\nCONSTRAINTS\n- Between {{min_words}} and {{max_words}} words in the body.\n- Address the reader using the masked placeholder exactly as written.\n- Exactly one clear next step.\n- No more than two exclamation marks.\n- Sign off as \"The Onboarding Team\".\n\nOUTPUT\nA single JSON object, nothing else:\n{\"subject\": \"<subject line>\", \"body\": \"<email body>\"}",
+  "allowed_variables": [
+    "rewritten_query",
+    "company_name",
+    "tier",
+    "region",
+    "product_list",
+    "contract_start",
+    "term_months",
+    "go_live",
+    "masked_contact",
+    "declared_discounts_block",
+    "untrusted_notes",
+    "min_words",
+    "max_words"
+  ],
+  "required_variables": [
+    "rewritten_query",
+    "company_name",
+    "tier",
+    "declared_discounts_block",
+    "min_words",
+    "max_words"
+  ],
+  "policy_refs": [
+    "POLICY.NO_FABRICATED_DISCOUNTS",
+    "POLICY.TONE",
+    "POLICY.NO_PII",
+    "POLICY.PROMPT_INJECTION"
+  ],
+  "concepts": [
+    "Chain-of-Thought reasoning",
+    "Least-to-most planning",
+    "Context-aware prompt enhancement",
+    "Prompt libraries & versioning"
+  ],
+  "checksum": "sha256:55ab14911e60a42676ef8e909f09904c855b2b97ef7ce8fa0657f5984e760eeb"
+}

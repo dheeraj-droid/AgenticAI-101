@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        # `nlp` pulls the spaCy model from a GitHub release wheel — it is not on
+        # PyPI. Without it the PII engine falls back to regex, which the suite
+        # also covers, but CI should exercise the Presidio path.
+        run: uv sync --extra dev --extra nlp
+
+      - name: Lint
+        run: uv run ruff check src tests
+
+      - name: Test
+        # The llm-marked tests need a live endpoint and are excluded by the
+        # pytest addopts default; everything else runs with no API key.
+        run: uv run pytest -q
+
+      - name: Verify prompt library checksums
+        run: uv run onboarding prompts verify
+
+      - name: Environment check
+        run: uv run onboarding doctor
+
+      - name: Three-way comparison
+        # Exits non-zero if the frameworks diverge on any deterministic field.
+        run: uv run onboarding compare
+
+      - name: Check the generated concept map is current
+        run: |
+          uv run onboarding concepts --format md > /tmp/concepts_generated.md
+          # docs/concepts.md carries a hand-written preamble; compare the table only.
+          sed -n '/^| Concept | Layer | Implementation |/,$p' docs/concepts.md > /tmp/concepts_committed.md
+          diff -u /tmp/concepts_committed.md /tmp/concepts_generated.md \
+            || { echo "::error::docs/concepts.md is stale — regenerate it with 'onboarding concepts --format md'"; exit 1; }

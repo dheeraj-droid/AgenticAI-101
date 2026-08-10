@@ -1,0 +1,27 @@
+{
+  "id": "agent_instructions",
+  "version": 1,
+  "status": "active",
+  "role": "user",
+  "description": "Instructions for the single tool-using LangChain agent. The two graph implementations render welcome_email directly instead; this prompt is what makes the LangChain agent's tool loop explicit and versioned rather than a hard-coded string.",
+  "template": "Draft the welcome email for this new customer.\n\nWork in this order:\n1. Call get_customer_context to learn the facts. Use nothing else as a source of truth.\n2. Look up whatever you need: product descriptions, the support commitment for their tier, any regional compliance step worth mentioning.\n3. Write the draft. Keep the body between {{min_words}} and {{max_words}} words, with exactly one clear next step, and sign off as \"The Onboarding Team\".\n4. Call check_business_rules with your draft. If it does not return PASS, fix exactly what it lists and check again. Never submit a failing draft.\n5. Return the final subject and body.\n\nThe context is already masked: placeholders such as <PERSON_1> stand in for real names. Address the reader using the placeholder exactly as written, and never guess what is behind one.",
+  "allowed_variables": [
+    "min_words",
+    "max_words"
+  ],
+  "required_variables": [
+    "min_words",
+    "max_words"
+  ],
+  "policy_refs": [
+    "POLICY.NO_FABRICATED_DISCOUNTS",
+    "POLICY.TONE",
+    "POLICY.NO_PII"
+  ],
+  "concepts": [
+    "Single-agent vs multi-agent systems",
+    "Agent loop: Action",
+    "Prompt libraries & versioning"
+  ],
+  "checksum": "sha256:03b70f27ae9cbb0cf1c61b15d802aee4495d7af47667b28206b1a2b91ad53e40"
+}

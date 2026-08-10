@@ -1,0 +1,38 @@
+{
+  "record_id": "CUST-2002",
+  "company_name": "Meridian Freight Group",
+  "tier": "enterprise",
+  "region": "eu",
+  "primary_contact": {
+    "full_name": "Annika Vogel",
+    "email": "annika.vogel@meridianfreight.eu",
+    "phone": "+49 30 5550 1188",
+    "title": "VP Technology"
+  },
+  "additional_contacts": [
+    {
+      "full_name": "Tomas Lindqvist",
+      "email": "tomas.lindqvist@meridianfreight.eu",
+      "phone": "+46 8 555 0123",
+      "title": "Head of Security"
+    }
+  ],
+  "products": ["core", "analytics", "api", "sso", "support-premium"],
+  "commercial_terms": {
+    "annual_contract_value_usd": "480000",
+    "currency": "USD",
+    "declared_discounts": [
+      {
+        "label": "multi-year commitment",
+        "kind": "percent",
+        "value": "12",
+        "approved_by": "rvp-emea"
+      }
+    ],
+    "contract_start": "2026-09-15",
+    "term_months": 36
+  },
+  "signup_notes": "Signed after a six-month evaluation. Security review must complete before any production data is loaded. They operate in seven EU countries and need data residency confirmed in writing. Their board has asked for a quarterly business review cadence.",
+  "requested_go_live": "2026-11-30",
+  "source_system": "salesforce"
+}

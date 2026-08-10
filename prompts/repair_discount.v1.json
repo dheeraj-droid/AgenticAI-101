@@ -1,0 +1,32 @@
+{
+  "id": "repair_discount",
+  "version": 1,
+  "status": "active",
+  "role": "user",
+  "description": "Reflection repair pass. Sent when the output validators found an ungrounded commercial claim, a tone breach or a PII leak in the draft.",
+  "template": "Your previous draft broke house rules and cannot be sent.\n\nPREVIOUS DRAFT\nSubject: {{previous_subject}}\n\n{{previous_body}}\n\nWHAT IS WRONG\n{{violation_list}}\n\n{{declared_discounts_block}}\n\nHOW TO FIX IT\n1. Delete every sentence listed above. Do not reword them \u2014 remove the claim entirely.\n2. Do not substitute a different number, offer or commitment in its place.\n3. Keep everything else that was fine: same warmth, same next step, same structure.\n4. Keep the body between {{min_words}} and {{max_words}} words.\n\nOUTPUT\nA single corrected JSON object, nothing else:\n{\"subject\": \"<subject line>\", \"body\": \"<email body>\"}",
+  "allowed_variables": [
+    "previous_subject",
+    "previous_body",
+    "violation_list",
+    "declared_discounts_block",
+    "min_words",
+    "max_words"
+  ],
+  "required_variables": [
+    "previous_subject",
+    "previous_body",
+    "violation_list",
+    "declared_discounts_block"
+  ],
+  "policy_refs": [
+    "POLICY.NO_FABRICATED_DISCOUNTS",
+    "POLICY.TONE",
+    "POLICY.NO_PII"
+  ],
+  "concepts": [
+    "Agent loop: Reflection",
+    "No fabricated discounts / grounded claims"
+  ],
+  "checksum": "sha256:3422d5ad75161f6c42cd091964d3e863f8524e283557e5b93d2915c29eab741b"
+}
