@@ -38,7 +38,7 @@ class OnboardingAdapter(Protocol):
 
 
 def load_record(path: str | Path) -> CustomerRecord:
-    return CustomerRecord.model_validate_json(Path(path).read_text())
+    return CustomerRecord.model_validate_json(Path(path).read_text(encoding="utf-8"))
 
 
 def get_adapter(framework: str, *, allow_send: bool = False) -> OnboardingAdapter:

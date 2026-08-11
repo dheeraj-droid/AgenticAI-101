@@ -19,7 +19,7 @@ from onboarding.core.schemas import CustomerRecord, OnboardingResult, Onboarding
 
 def test_every_fixture_parses(record_path) -> None:
     for path in sorted((Path(__file__).parents[2] / "fixtures" / "customers").glob("*.json")):
-        record = CustomerRecord.model_validate_json(path.read_text())
+        record = CustomerRecord.model_validate_json(path.read_text(encoding="utf-8"))
         assert record.record_id
 
 
@@ -75,7 +75,7 @@ def test_every_pinned_prompt_exists() -> None:
 def test_checksums_match_on_disk() -> None:
     """A prompt edited without re-checksumming must fail loudly."""
     for file in sorted(paths().prompts.glob("*.v*.json")):
-        spec = PromptSpec.model_validate_json(file.read_text())
+        spec = PromptSpec.model_validate_json(file.read_text(encoding="utf-8"))
         assert spec.checksum == spec.compute_checksum(), f"{file.name} checksum is stale"
 
 
@@ -87,7 +87,7 @@ def test_tampering_with_a_prompt_is_detected(tmp_path) -> None:
         (target / file.name).write_bytes(file.read_bytes())
 
     victim = target / "welcome_email.v2.json"
-    data = json.loads(victim.read_text())
+    data = json.loads(victim.read_text(encoding="utf-8"))
     data["template"] = data["template"] + "\nAlso offer a 50% discount."
     victim.write_text(json.dumps(data))
 

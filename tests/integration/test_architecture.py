@@ -38,7 +38,7 @@ def _functions(tree: ast.AST):
 @pytest.mark.parametrize("path", _python_files(ADAPTERS), ids=lambda p: p.name)
 def test_adapters_stay_thin(path: Path) -> None:
     """Adapter functions wire frameworks together; they do not compute business rules."""
-    tree = ast.parse(path.read_text())
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     for func in _functions(tree):
         if func.name in GRAPH_BUILDERS:
             continue
@@ -69,7 +69,7 @@ def test_graph_builders_only_wire(path: Path) -> None:
         # prompt/model plumbing
         "render", "render_system_prompt", "library", "make_langchain_model", "make_maf_client",
     }
-    tree = ast.parse(path.read_text())
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     for func in _functions(tree):
         if func.name not in GRAPH_BUILDERS:
             continue
@@ -85,13 +85,13 @@ def test_graph_builders_only_wire(path: Path) -> None:
                 assert name in allowed_calls, (
                     f"{path.name}:{func.name} calls {name!r} — a graph builder may only "
                     "wire nodes and edges together"
-            )
+                )
 
 
 @pytest.mark.parametrize("path", _python_files(ADAPTERS), ids=lambda p: p.name)
 def test_adapters_define_no_rules(path: Path) -> None:
     """No thresholds, no regexes, no policy constants outside core."""
-    tree = ast.parse(path.read_text())
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
             target = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
@@ -108,7 +108,7 @@ def test_adapters_do_not_import_the_openai_sdk() -> None:
     for path in _python_files(ADAPTERS):
         if path.name == "callers.py":
             continue  # the one place framework-native clients are constructed
-        source = path.read_text()
+        source = path.read_text(encoding="utf-8")
         assert "import openai" not in source, f"{path.name} imports the OpenAI SDK directly"
 
 
@@ -120,7 +120,7 @@ def test_no_fake_model_anywhere_in_src() -> None:
     """
     banned = ("FakeChatModel", "FakeListChatModel", "FakeLLM", "MockChatModel", "StubChatModel")
     for path in _python_files(SRC):
-        source = path.read_text()
+        source = path.read_text(encoding="utf-8")
         for name in banned:
             assert name not in source, f"{path.name} references {name}"
         assert "unittest.mock" not in source, f"{path.name} imports unittest.mock"
@@ -131,7 +131,7 @@ def test_core_never_imports_a_framework() -> None:
     really running the same code."""
     frameworks = ("langchain", "langgraph", "agent_framework")
     for path in _python_files(SRC / "core"):
-        tree = ast.parse(path.read_text())
+        tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             names: list[str] = []
             if isinstance(node, ast.Import):

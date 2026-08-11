@@ -121,11 +121,11 @@ class PromptLibrary:
         index_path = root / "index.json"
         if not index_path.exists():
             raise FileNotFoundError(f"prompt index not found: {index_path}")
-        index: dict[str, int] = json.loads(index_path.read_text())
+        index: dict[str, int] = json.loads(index_path.read_text(encoding="utf-8"))
 
         specs: dict[tuple[str, int], PromptSpec] = {}
         for file in sorted(root.glob("*.v*.json")):
-            spec = PromptSpec.model_validate_json(file.read_text())
+            spec = PromptSpec.model_validate_json(file.read_text(encoding="utf-8"))
             if verify and spec.checksum:
                 actual = spec.compute_checksum()
                 if actual != spec.checksum:

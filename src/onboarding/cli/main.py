@@ -199,11 +199,11 @@ def compare(
 
     target = out or (paths().docs / "comparison.md")
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(markdown)
+    target.write_text(markdown, encoding="utf-8")
 
     json_target = json_out or (paths().runs / "comparison.json")
     json_target.parent.mkdir(parents=True, exist_ok=True)
-    json_target.write_text(render_json(report))
+    json_target.write_text(render_json(report), encoding="utf-8")
 
     table = Table(title="Comparison summary")
     table.add_column("fixture")
@@ -326,13 +326,13 @@ def prompts_rechecksum() -> None:
 
     changed = 0
     for file in sorted(paths().prompts.glob("*.v*.json")):
-        data = json.loads(file.read_text())
+        data = json.loads(file.read_text(encoding="utf-8"))
         previous = data.get("checksum", "")
         data["checksum"] = ""
         actual = PromptSpec.model_validate(data).compute_checksum()
         if actual != previous:
             data["checksum"] = actual
-            file.write_text(json.dumps(data, indent=2) + "\n")
+            file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
             console.print(f"updated [bold]{file.name}[/] -> {actual[:22]}…")
             changed += 1
     console.print(f"{changed} prompt(s) updated." if changed else "All checksums already current.")
@@ -485,7 +485,7 @@ def outbox(
         if not matches:
             console.print(f"[red]No message matching {show!r}[/]")
             raise typer.Exit(code=1)
-        console.print(matches[-1].read_text())
+        console.print(matches[-1].read_text(encoding="utf-8"))
         return
     if not files:
         console.print(f"The outbox is empty ({outbox_dir()}).")

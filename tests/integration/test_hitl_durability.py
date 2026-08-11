@@ -150,7 +150,7 @@ async def test_audit_log_never_contains_raw_pii(framework, pii_record, record_pa
 
     log = paths().audit_log
     assert log.exists()
-    text = log.read_text()
+    text = log.read_text(encoding="utf-8")
     assert contains_raw_pii(text, pii_record) == []
     for contact in pii_record.all_contacts:
         assert str(contact.email) not in text
@@ -159,7 +159,7 @@ async def test_audit_log_never_contains_raw_pii(framework, pii_record, record_pa
 @pytest.mark.parametrize("framework", ALL)
 async def test_audit_events_are_well_formed(framework, enterprise_record, record_path) -> None:
     result = await _run(framework, enterprise_record, record_path("enterprise_high_value"))
-    for line in paths().audit_log.read_text().splitlines():
+    for line in paths().audit_log.read_text(encoding="utf-8").splitlines():
         payload = json.loads(line)
         assert {"event_id", "ts", "run_id", "record_id", "framework", "event_type"} <= payload.keys()
 
