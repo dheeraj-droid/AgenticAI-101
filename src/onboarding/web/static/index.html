@@ -5,187 +5,444 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Customer Onboarding Assistant</title>
 <style>
+/* ---------------------------------------------------------------------------
+   Tokens
+   --------------------------------------------------------------------------- */
+:root {
+  --bg:        #fbfbfa;
+  --surface:   #ffffff;
+  --sunken:    #f4f4f2;
+  --line:      #e5e4e0;
+  --line-soft: #eeedea;
+  --text:      #1a1a19;
+  --text-2:    #6b6a66;
+  --text-3:    #97958f;
+  --accent:    #2f6fed;
+  --accent-fg: #ffffff;
+  --good:      #1f8a54;
+  --warn:      #a8710e;
+  --bad:       #c0392f;
+  --good-bg:   #eaf6ef;
+  --warn-bg:   #fdf5e6;
+  --bad-bg:    #fcefee;
+
+  --r-sm: 6px;
+  --r:    9px;
+  --r-lg: 13px;
+
+  /* Custom curves — the built-in CSS easings are too weak to feel intentional. */
+  --ease-out:    cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f1115;
-    --panel: #171a21;
-    --panel-2: #1e222b;
-    --line: #2a2f3a;
-    --text: #e6e9ef;
-    --dim: #949cad;
-    --accent: #6ea8fe;
-    --good: #5fd68a;
-    --warn: #f0c674;
-    --bad: #f08a8a;
-    --radius: 10px;
+    --bg:        #131315;
+    --surface:   #1a1a1d;
+    --sunken:    #202024;
+    --line:      #2b2b30;
+    --line-soft: #232327;
+    --text:      #ececf0;
+    --text-2:    #9d9da6;
+    --text-3:    #6e6e78;
+    --accent:    #6d9dff;
+    --accent-fg: #10121a;
+    --good:      #56d195;
+    --warn:      #e8b562;
+    --bad:       #f08e86;
+    --good-bg:   #17281f;
+    --warn-bg:   #2a2218;
+    --bad-bg:    #2c1d1c;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------------------
+   Header
+   --------------------------------------------------------------------------- */
+header {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+#status { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+
+/* ---------------------------------------------------------------------------
+   Layout
+   --------------------------------------------------------------------------- */
+main {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 24px;
+  padding: 24px;
+  max-width: 1360px;
+  margin: 0 auto;
+  align-items: start;
+}
+@media (max-width: 920px) { main { grid-template-columns: 1fr; } }
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.panel > .body { padding: 18px; }
+
+.eyebrow {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--text-3); margin: 0 0 12px;
+}
+
+/* ---------------------------------------------------------------------------
+   Form
+   --------------------------------------------------------------------------- */
+label {
+  display: block; font-size: 12px; font-weight: 500;
+  color: var(--text-2); margin: 14px 0 5px;
+}
+label:first-of-type { margin-top: 0; }
+label .hint { font-weight: 400; color: var(--text-3); }
+
+input, select, textarea {
+  width: 100%; padding: 8px 10px;
+  font: inherit; font-size: 14px;
+  color: var(--text); background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+textarea { resize: vertical; min-height: 62px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.pair label { margin-top: 0; }
+
+button {
+  font: inherit; font-weight: 550; cursor: pointer;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  transition: transform 160ms var(--ease-out), background-color 140ms ease, opacity 140ms ease;
+}
+button:active { transform: scale(0.97); }
+button:disabled { opacity: 0.55; cursor: default; transform: none; }
+
+.primary {
+  width: 100%; margin-top: 20px; padding: 10px;
+  background: var(--accent); color: var(--accent-fg);
+}
+@media (hover: hover) and (pointer: fine) {
+  .primary:not(:disabled):hover { background: color-mix(in srgb, var(--accent) 88%, black); }
+}
+
+/* ---------------------------------------------------------------------------
+   Tabs — one per framework.
+   The active styling lives on a duplicated, clipped copy of the tab strip, so
+   the colour change travels with the indicator instead of cross-fading. Timing
+   individual colour transitions can never look this clean.
+   --------------------------------------------------------------------------- */
+.tabs {
+  position: relative;
+  display: flex;
+  padding: 4px;
+  gap: 2px;
+  background: var(--sunken);
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  isolation: isolate;
+}
+.tab {
+  flex: 1;
+  position: relative;
+  padding: 9px 8px 10px;
+  background: none;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: color 140ms ease, transform 160ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .tab:hover { color: var(--text); }
+}
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* Small dot: this framework has produced a result. */
+.tab .dot {
+  display: inline-block; width: 5px; height: 5px; margin-left: 6px;
+  border-radius: 50%; background: currentColor;
+  opacity: 0; transform: scale(0.6);
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+  vertical-align: middle;
+}
+.tab[data-ran="true"] .dot { opacity: 0.5; transform: scale(1); }
+
+.tabs-active {
+  position: absolute; inset: 4px;
+  display: flex; gap: 2px;
+  pointer-events: none;
+  clip-path: inset(0 100% 0 0 round var(--r-sm));
+  transition: clip-path 260ms var(--ease-out);
+  z-index: 1;
+}
+.tabs-active .tab {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 0 0 1px var(--line-soft);
+}
+.tabs-active .tab[data-ran="true"] .dot { opacity: 0.45; transform: scale(1); }
+
+/* ---------------------------------------------------------------------------
+   Result
+   --------------------------------------------------------------------------- */
+#panelbody { padding: 18px; }
+
+.verdict { display: flex; align-items: flex-start; gap: 11px; }
+.verdict .mark {
+  flex: none; width: 20px; height: 20px; margin-top: 1px;
+  border-radius: 50%; display: grid; place-items: center;
+  font-size: 12px; font-weight: 700;
+}
+.verdict h2 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.verdict .sub { color: var(--text-2); font-size: 13px; margin-top: 3px; }
+
+[data-outcome="registered"] .mark { background: var(--good-bg); color: var(--good); }
+[data-outcome="registered"] h2   { color: var(--good); }
+[data-outcome="duplicate"]  .mark { background: var(--warn-bg); color: var(--warn); }
+[data-outcome="duplicate"]  h2   { color: var(--warn); }
+[data-outcome="blocked"]    .mark { background: var(--bad-bg); color: var(--bad); }
+[data-outcome="blocked"]    h2   { color: var(--bad); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.chip {
+  font-size: 11.5px; padding: 3px 8px; border-radius: 999px;
+  background: var(--sunken); color: var(--text-2);
+  border: 1px solid var(--line-soft);
+}
+.chip.alert { background: var(--bad-bg); color: var(--bad); border-color: transparent; }
+
+.section { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.section > h3 {
+  margin: 0 0 10px; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-3);
+}
+
+ul.plain { margin: 0; padding: 0; list-style: none; }
+ul.plain li { padding: 3px 0; font-size: 13.5px; }
+ul.plain li + li { border-top: 1px solid var(--line-soft); }
+.muted { color: var(--text-2); }
+.sev {
+  display: inline-block; min-width: 58px; margin-right: 9px;
+  font: 10.5px/1.7 var(--mono); text-transform: uppercase; letter-spacing: 0.05em;
+  text-align: center; border-radius: var(--r-sm); vertical-align: 1px;
+}
+.sev.error   { background: var(--bad-bg);  color: var(--bad); }
+.sev.warning { background: var(--warn-bg); color: var(--warn); }
+.sev.info    { background: var(--sunken);  color: var(--text-3); }
+.code { font-family: var(--mono); font-size: 12.5px; color: var(--text-2); }
+.tick { font-family: var(--mono); color: var(--text-3); margin-right: 7px; }
+.tick.done { color: var(--good); }
+
+.mail + .mail { margin-top: 10px; }
+.mail summary {
+  cursor: pointer; list-style: none; padding: 9px 11px;
+  background: var(--sunken); border: 1px solid var(--line-soft);
+  border-radius: var(--r); font-size: 13.5px;
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  transition: background-color 140ms ease;
+}
+.mail summary::-webkit-details-marker { display: none; }
+@media (hover: hover) and (pointer: fine) { .mail summary:hover { background: var(--line-soft); } }
+.mail summary .who { color: var(--text-3); font-size: 12px; }
+.mail summary .flag { margin-left: auto; font-size: 11.5px; font-weight: 600; }
+.mail .flag.yes { color: var(--good); }
+.mail .flag.no  { color: var(--warn); }
+.mail pre {
+  margin: 0; padding: 12px 13px;
+  border: 1px solid var(--line-soft); border-top: 0;
+  border-radius: 0 0 var(--r) var(--r);
+  background: var(--surface);
+  font: 12.5px/1.55 var(--mono);
+  white-space: pre-wrap; word-wrap: break-word;
+  color: var(--text-2);
+  max-height: 300px; overflow-y: auto;
+}
+.mail[open] summary { border-radius: var(--r) var(--r) 0 0; }
+.mail .why { font-size: 12px; color: var(--text-3); padding: 7px 11px 0; }
+
+/* ---------------------------------------------------------------------------
+   Chat
+   --------------------------------------------------------------------------- */
+#log { max-height: 300px; overflow-y: auto; }
+.turn + .turn { margin-top: 14px; }
+.turn .q { font-weight: 550; font-size: 13.5px; }
+.turn .a { white-space: pre-wrap; font-size: 13.5px; margin-top: 3px; }
+.turn .tools {
+  font: 11px/1.4 var(--mono); color: var(--text-3); margin-top: 5px;
+}
+.ask { display: flex; gap: 8px; margin-top: 14px; }
+.ask input { flex: 1; }
+.ask button { padding: 8px 16px; background: var(--sunken); color: var(--text); border-color: var(--line); }
+
+.suggest { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.suggest button {
+  padding: 4px 9px; font-size: 12px; border-radius: 999px;
+  background: none; border: 1px dashed var(--line); color: var(--text-2);
+}
+@media (hover: hover) and (pointer: fine) {
+  .suggest button:hover { border-style: solid; color: var(--text); }
+}
+
+/* ---------------------------------------------------------------------------
+   Empty / error / status
+   --------------------------------------------------------------------------- */
+.empty { color: var(--text-2); font-size: 13.5px; }
+.empty strong { color: var(--text); font-weight: 550; }
+.err { color: var(--bad); font-size: 13px; margin-top: 12px; white-space: pre-wrap; }
+.pill {
+  font-size: 11.5px; padding: 3px 9px; border-radius: 999px;
+  background: var(--sunken); border: 1px solid var(--line-soft); color: var(--text-2);
+}
+.pill.on  { background: var(--good-bg); color: var(--good); border-color: transparent; }
+.pill.off { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+
+.spinner {
+  display: inline-block; width: 13px; height: 13px; vertical-align: -2px;
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: currentColor; border-radius: 50%;
+  /* Fast — a quicker spinner makes the same wait feel shorter. */
+  animation: spin 600ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Entrance: a short stagger reads as one cascade rather than a pop. */
+.enter { animation: rise 260ms var(--ease-out) both; }
+.enter:nth-child(2) { animation-delay: 40ms; }
+.enter:nth-child(3) { animation-delay: 80ms; }
+.enter:nth-child(4) { animation-delay: 120ms; }
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Fewer and gentler, not zero: keep opacity, drop the movement. */
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
   }
-  header {
-    padding: 22px 28px; border-bottom: 1px solid var(--line);
-    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
-  }
-  h1 { font-size: 19px; margin: 0; font-weight: 620; }
-  .sub { color: var(--dim); font-size: 13px; }
-  main { display: grid; grid-template-columns: 380px 1fr; gap: 0; align-items: start; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
-  .col { padding: 22px 28px; }
-  .col.left { border-right: 1px solid var(--line); }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .09em;
-       color: var(--dim); margin: 0 0 14px; font-weight: 600; }
-  label { display: block; font-size: 12px; color: var(--dim); margin: 12px 0 4px; }
-  input, select, textarea {
-    width: 100%; padding: 8px 10px; background: var(--panel); color: var(--text);
-    border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: 14px;
-  }
-  textarea { resize: vertical; min-height: 62px; }
-  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  button {
-    margin-top: 18px; width: 100%; padding: 10px; border-radius: 7px; border: 0;
-    background: var(--accent); color: #0b1220; font: inherit; font-weight: 640; cursor: pointer;
-  }
-  button:disabled { opacity: .5; cursor: default; }
-  button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
-  .card {
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: var(--radius); padding: 16px 18px; margin-bottom: 14px;
-  }
-  .card h3 { margin: 0 0 10px; font-size: 14px; font-weight: 620; }
-  .headline { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
-  .headline.registered { color: var(--good); }
-  .headline.duplicate { color: var(--warn); }
-  .headline.needs_approval, .headline.blocked { color: var(--bad); }
-  .meta { color: var(--dim); font-size: 12.5px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-  .chip {
-    font-size: 11.5px; padding: 2px 8px; border-radius: 999px;
-    background: var(--panel-2); border: 1px solid var(--line); color: var(--dim);
-  }
-  ul { margin: 8px 0 0; padding-left: 18px; }
-  li { margin: 3px 0; }
-  .mail { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
-  .mail:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
-  .mail .to { color: var(--dim); font-size: 12.5px; }
-  pre {
-    white-space: pre-wrap; word-wrap: break-word; margin: 8px 0 0;
-    background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px;
-    padding: 11px 13px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-  }
-  .sent { color: var(--good); }
-  .unsent { color: var(--warn); }
-  #chat { display: none; }
-  #log { max-height: 340px; overflow-y: auto; }
-  .turn { margin-bottom: 12px; }
-  .turn .q { font-weight: 600; }
-  .turn .a { white-space: pre-wrap; }
-  .turn .tools { color: var(--dim); font-size: 11.5px; margin-top: 3px; }
-  .ask { display: flex; gap: 8px; margin-top: 12px; }
-  .ask input { flex: 1; }
-  .ask button { margin: 0; width: auto; padding: 8px 18px; }
-  .err { color: var(--bad); font-size: 13px; margin-top: 10px; white-space: pre-wrap; }
-  .empty { color: var(--dim); font-size: 13.5px; }
-  .banner {
-    font-size: 12.5px; color: var(--dim); background: var(--panel);
-    border: 1px solid var(--line); border-radius: 7px; padding: 9px 12px; margin-bottom: 16px;
-  }
-  a { color: var(--accent); }
+  .enter { animation: fade 200ms ease both; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .spinner { animation: spin 900ms linear infinite !important; }
+}
 </style>
 </head>
 <body>
+
 <header>
   <h1>Customer Onboarding Assistant</h1>
-  <span class="sub">the same workflow in four agent frameworks</span>
+  <div id="status"><span class="pill">checking…</span></div>
 </header>
 
 <main>
-  <section class="col left">
-    <h2>New customer</h2>
-    <div id="banner" class="banner">checking configuration…</div>
-    <form id="form" autocomplete="off">
-      <label for="framework">Framework</label>
-      <select id="framework" name="framework"></select>
-      <div id="framework-note" class="meta" style="margin-top:6px"></div>
+  <!-- ------------------------------------------------------------------ -->
+  <section class="panel">
+    <div class="body">
+      <p class="eyebrow">New customer</p>
+      <form id="form" autocomplete="off">
+        <label for="company_name">Company</label>
+        <input id="company_name" name="company_name" required value="Northwind Trading">
 
-      <label for="company_name">Company</label>
-      <input id="company_name" name="company_name" required value="Northwind Trading">
+        <label for="full_name">Contact</label>
+        <input id="full_name" name="full_name" required value="Ada Lovelace">
 
-      <label for="full_name">Contact name</label>
-      <input id="full_name" name="full_name" required value="Ada Lovelace">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" required value="ada@northwind.example">
 
-      <label for="email">Email</label>
-      <input id="email" name="email" type="email" required value="ada@northwind.example">
+        <label for="phone">Phone <span class="hint">— never shown to the model</span></label>
+        <input id="phone" name="phone" value="+44 20 7946 0142">
 
-      <label for="phone">Phone <span class="meta">(never shown to the model)</span></label>
-      <input id="phone" name="phone" value="+44 20 7946 0142">
-
-      <div class="row">
-        <div>
-          <label for="plan">Plan</label>
-          <select id="plan" name="plan">
-            <option>free</option><option selected>pro</option><option>pro+</option>
-          </select>
+        <div class="pair">
+          <div>
+            <label for="plan">Plan</label>
+            <select id="plan" name="plan">
+              <option>free</option><option selected>pro</option><option>pro+</option>
+            </select>
+          </div>
+          <div>
+            <label for="region">Region</label>
+            <select id="region" name="region">
+              <option>us</option><option>eu</option><option>apac</option><option>other</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <label for="region">Region</label>
-          <select id="region" name="region">
-            <option>us</option><option>eu</option><option>apac</option><option>other</option>
-          </select>
+
+        <div class="pair">
+          <div>
+            <label for="annual_contract_value_usd">Value (USD)</label>
+            <input id="annual_contract_value_usd" name="annual_contract_value_usd" value="12000">
+          </div>
+          <div>
+            <label for="term_months">Term (months)</label>
+            <input id="term_months" name="term_months" value="12">
+          </div>
         </div>
-      </div>
 
-      <div class="row">
-        <div>
-          <label for="annual_contract_value_usd">Annual value (USD)</label>
-          <input id="annual_contract_value_usd" name="annual_contract_value_usd" value="12000">
-        </div>
-        <div>
-          <label for="term_months">Term (months)</label>
-          <input id="term_months" name="term_months" value="12">
-        </div>
-      </div>
+        <label for="products">Products <span class="hint">— comma separated</span></label>
+        <input id="products" name="products" value="core, analytics">
 
-      <label for="products">Products <span class="meta">(comma separated)</span></label>
-      <input id="products" name="products" value="core, analytics">
+        <label for="signup_notes">Signup notes</label>
+        <textarea id="signup_notes" name="signup_notes">Wants to be live before the end of the quarter.</textarea>
 
-      <label for="signup_notes">Signup notes</label>
-      <textarea id="signup_notes" name="signup_notes">Wants to be live before the end of the quarter.</textarea>
-
-      <button id="submit" type="submit">Onboard</button>
-      <div id="form-error" class="err"></div>
-    </form>
+        <button class="primary" id="submit" type="submit">Onboard</button>
+        <div id="form-error" class="err"></div>
+      </form>
+    </div>
   </section>
 
-  <section class="col right">
-    <h2>Result</h2>
-    <div id="result"><div class="card empty">Submit the form and the agent will validate the
-      record, check for a duplicate, register the customer and write the mail.</div></div>
-
-    <div id="chat">
-      <h2>Ask about the customers</h2>
-      <div class="card">
-        <div id="log"><div class="empty">The agent can read the customer registry and each
-          customer's task list — nothing else, and never a phone number. Try
-          <em>how many tasks are done for them?</em> or <em>how many customers are on pro?</em></div></div>
-        <form class="ask" id="ask">
-          <input id="question" placeholder="Ask a question…" autocomplete="off">
-          <button type="submit">Ask</button>
-        </form>
-        <div id="chat-error" class="err"></div>
-      </div>
-    </div>
+  <!-- ------------------------------------------------------------------ -->
+  <section class="panel">
+    <div class="tabs" id="tabs" role="tablist" aria-label="Agent framework"></div>
+    <div id="panelbody"></div>
   </section>
 </main>
 
 <script>
-const $ = (id) => document.getElementById(id);
-let sessionId = null;
-let config = null;
+"use strict";
 
+const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+let config = null;
+let active = "langgraph";
+/** Per-framework state, so switching tabs compares runs instead of losing them. */
+const tabs = new Map();
+
+function state(id) {
+  if (!tabs.has(id)) tabs.set(id, { result: null, session: null, turns: [], busy: false, error: "" });
+  return tabs.get(id);
+}
 
 async function api(path, body) {
   const response = await fetch(path, {
@@ -194,138 +451,276 @@ async function api(path, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : response.statusText);
+  if (!response.ok) {
+    const detail = data.detail;
+    throw new Error(typeof detail === "string" ? detail
+      : Array.isArray(detail) ? detail.map((d) => d.msg || JSON.stringify(d)).join("; ")
+      : response.statusText);
+  }
   return data;
 }
 
-async function loadConfig() {
-  config = await api("/api/config");
-  const select = $("framework");
-  select.innerHTML = config.frameworks
-    .map((f) => `<option value="${esc(f.id)}">${esc(f.label)}</option>`).join("");
-  select.value = "langgraph";
-  showNote();
-  select.addEventListener("change", showNote);
+/* --- boot ---------------------------------------------------------------- */
 
+async function boot() {
+  config = await api("/api/config");
+  if (!config.frameworks.some((f) => f.id === active)) active = config.frameworks[0].id;
+  renderStatus();
+  renderTabs();
+  renderPanel();
+}
+
+function renderStatus() {
   const bits = [];
   bits.push(config.llm.configured
-    ? `model: ${esc(config.llm.model)}`
-    : `<span class="unsent">no model configured — drafting will fail</span>`);
-  if (config.mail.sending) {
-    const approved = config.mail.approved_recipients;
-    bits.push(approved.includes("*")
-      ? `<span class="sent">sending real mail to any address</span>`
-      : `<span class="sent">sending real mail</span> to ${approved.length} approved address(es)`);
-  } else if (config.mail.allow_send) {
-    bits.push(`<span class="unsent">--send is on but SMTP_HOST is not set</span> — outbox only`);
+    ? `<span class="pill on">${esc(config.llm.model)}</span>`
+    : `<span class="pill off">no model configured</span>`);
+
+  const mail = config.mail;
+  if (mail.sending) {
+    const n = mail.approved_recipients.length;
+    bits.push(mail.approved_recipients.includes("*")
+      ? `<span class="pill on">sending to any address</span>`
+      : `<span class="pill on">sending to ${n} approved address${n === 1 ? "" : "es"}</span>`);
   } else {
-    bits.push(`writing to the outbox only — restart with <code>--send</code> to transmit`);
+    bits.push(`<span class="pill">outbox only</span>`);
   }
-  bits.push(`task lists to ${esc(config.mail.support_address)}`);
-  $("banner").innerHTML = bits.join(" &middot; ");
+  $("status").innerHTML = bits.join("");
 }
 
-function showNote() {
-  const chosen = config.frameworks.find((f) => f.id === $("framework").value);
-  $("framework-note").textContent = chosen ? chosen.note : "";
+/* --- tabs ---------------------------------------------------------------- */
+
+function tabMarkup() {
+  return config.frameworks.map((f) => `
+    <button class="tab" role="tab" type="button" data-id="${esc(f.id)}"
+            data-ran="${state(f.id).result ? "true" : "false"}"
+            aria-selected="${f.id === active}" tabindex="${f.id === active ? "0" : "-1"}"
+            title="${esc(f.full_name)} — ${esc(f.note)}">${esc(f.label)}<span class="dot"></span></button>`).join("");
 }
 
-$("form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  $("form-error").textContent = "";
-  $("submit").disabled = true;
-  $("submit").textContent = "Running…";
-  $("result").innerHTML = `<div class="card empty">The agent is working. A first run loads the
-    PII model, so give it a moment.</div>`;
-  try {
-    const payload = Object.fromEntries(new FormData($("form")).entries());
-    const result = await api("/api/onboard", payload);
-    sessionId = result.session_id;
-    renderResult(result);
-    $("chat").style.display = "block";
-  } catch (error) {
-    $("form-error").textContent = error.message;
-    $("result").innerHTML = `<div class="card empty">Nothing to show — the run did not finish.</div>`;
-  } finally {
-    $("submit").disabled = false;
-    $("submit").textContent = "Onboard";
-  }
+function renderTabs() {
+  $("tabs").innerHTML = `${tabMarkup()}<div class="tabs-active" aria-hidden="true">${tabMarkup()}</div>`;
+  $("tabs").querySelectorAll(".tabs-active .tab").forEach((t) => t.setAttribute("tabindex", "-1"));
+  moveIndicator();
+}
+
+/** Clip the duplicated strip down to just the active tab. */
+function moveIndicator() {
+  const strip = $("tabs").querySelector(".tabs-active");
+  const buttons = [...$("tabs").children].filter((el) => el.classList.contains("tab"));
+  const index = config.frameworks.findIndex((f) => f.id === active);
+  const target = buttons[index];
+  if (!strip || !target) return;
+  const left = target.offsetLeft - 4;              // strip is inset by 4px
+  const right = strip.offsetWidth - left - target.offsetWidth;
+  strip.style.clipPath = `inset(0 ${Math.max(0, right)}px 0 ${Math.max(0, left)}px round var(--r-sm))`;
+}
+
+function selectTab(id) {
+  if (id === active) return;
+  active = id;
+  renderTabs();
+  renderPanel();
+}
+
+$("tabs").addEventListener("click", (event) => {
+  const tab = event.target.closest(".tab");
+  if (tab && tab.dataset.id) selectTab(tab.dataset.id);
 });
 
-function renderResult(r) {
-  const chips = [
-    `risk: ${esc(r.risk_band)}`,
-    `${r.tasks.length} task(s)`,
-    `${r.llm_calls} model call(s)`,
-    `${r.duration_ms} ms`,
-  ];
-  if (r.pii_entity_types.length) chips.push(`PII masked: ${esc(r.pii_entity_types.join(", "))}`);
-  if (r.injection_signals.length) chips.push(`injection: ${esc(r.injection_signals.join(", "))}`);
+// Roving tabindex: arrow keys move between tabs, as a tablist should.
+$("tabs").addEventListener("keydown", (event) => {
+  const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+  if (!step) return;
+  event.preventDefault();
+  const ids = config.frameworks.map((f) => f.id);
+  const next = ids[(ids.indexOf(active) + step + ids.length) % ids.length];
+  selectTab(next);
+  $("tabs").querySelector(`.tab[data-id="${next}"]`).focus();
+});
 
-  let html = `<div class="card">
-    <p class="headline ${esc(r.outcome)}">${esc(r.headline)}</p>
-    <div class="meta">${esc(r.company_name)} &middot; ${esc(r.contact_name)} &middot;
-      ${esc(r.plan)} plan &middot; ${esc(r.record_id)} &middot; status ${esc(r.status)}</div>
-    <div class="chips">${chips.map((c) => `<span class="chip">${c}</span>`).join("")}</div>`;
-  if (r.findings.length) {
-    html += `<ul>${r.findings.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>`;
+window.addEventListener("resize", () => { if (config) moveIndicator(); });
+
+/* --- the panel under the active tab -------------------------------------- */
+
+function renderPanel() {
+  const s = state(active);
+  const label = config.frameworks.find((f) => f.id === active).full_name;
+
+  if (s.busy) {
+    $("panelbody").innerHTML =
+      `<p class="empty enter"><span class="spinner"></span>&nbsp;&nbsp;${esc(label)} is working…
+       <br><span class="muted">The first run loads the PII model, so give it a moment.</span></p>`;
+    return;
   }
-  if (r.escalation_queue.length) {
-    html += `<ul>${r.escalation_queue.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`;
+  if (!s.result) {
+    $("panelbody").innerHTML = `<div class="empty enter">
+      <p style="margin-top:0"><strong>${esc(label)}</strong> hasn't run yet.</p>
+      <p style="margin-bottom:0">Fill in the form and press <strong>Onboard</strong>. It validates the
+      record, checks for a duplicate, registers the customer and writes the mail — then you can ask
+      questions about it. Switch tabs to run the same input through a different framework.</p>
+      ${s.error ? `<p class="err">${esc(s.error)}</p>` : ""}
+    </div>`;
+    return;
+  }
+  $("panelbody").innerHTML = resultMarkup(s.result) + chatMarkup(s);
+  bindChat();
+  const log = $("log");
+  if (log) log.scrollTop = log.scrollHeight;
+}
+
+const MARKS = { registered: "✓", duplicate: "!", blocked: "×" };
+
+function resultMarkup(r) {
+  const chips = [
+    `${r.llm_calls} model call${r.llm_calls === 1 ? "" : "s"}`,
+    `${r.duration_ms} ms`,
+    `risk ${esc(r.risk_band)}`,
+  ];
+  if (r.pii_entity_types.length) chips.push(`masked ${esc(r.pii_entity_types.join(", "))}`);
+
+  let html = `<div class="enter" data-outcome="${esc(r.outcome)}">
+    <div class="verdict">
+      <span class="mark">${MARKS[r.outcome] || "•"}</span>
+      <div>
+        <h2>${esc(r.headline)}</h2>
+        <div class="sub">${esc(r.company_name)} · ${esc(r.contact_name)} · ${esc(r.plan)} plan ·
+          <span style="font-family:var(--mono)">${esc(r.record_id)}</span></div>
+      </div>
+    </div>
+    <div class="chips">
+      ${chips.map((c) => `<span class="chip">${esc(c)}</span>`).join("")}
+      ${r.injection_signals.map((s) => `<span class="chip alert">${esc(s)}</span>`).join("")}
+    </div>`;
+
+  const rows = [
+    ...r.findings.map((f) => `<span class="sev ${esc(f.severity)}">${esc(f.severity)}</span>
+      <span class="code">${esc(f.code)}</span> ${esc(f.message)}`),
+    ...r.escalation_queue.map((e) => `<span class="sev info">stopped</span>${esc(e)}`),
+  ];
+  if (rows.length) {
+    html += `<ul class="plain" style="margin-top:14px">${
+      rows.map((row) => `<li>${row}</li>`).join("")}</ul>`;
   }
   html += `</div>`;
 
   if (r.mail.length) {
-    html += `<div class="card"><h3>Mail</h3>` + r.mail.map((m) => `
-      <div class="mail">
-        <div><strong>${esc(m.subject)}</strong></div>
-        <div class="to">to ${esc(m.to)} (${esc(m.audience)}) &middot;
-          <span class="${m.transmitted ? "sent" : "unsent"}">
-            ${m.transmitted ? "sent" : "not sent"}</span>
-          — ${esc(m.reason)}</div>
+    html += `<div class="section enter"><h3>Mail — ${r.mail.length}</h3>` + r.mail.map((m, i) => `
+      <details class="mail"${i === 0 ? " open" : ""}>
+        <summary>
+          <span>${esc(m.subject)}</span>
+          <span class="who">${esc(m.audience)} · ${esc(m.to)}</span>
+          <span class="flag ${m.transmitted ? "yes" : "no"}">${m.transmitted ? "sent" : "not sent"}</span>
+        </summary>
+        <div class="why">${esc(m.reason)}</div>
         <pre>${esc(m.body)}</pre>
-      </div>`).join("") + `</div>`;
+      </details>`).join("") + `</div>`;
   }
 
   if (r.tasks.length) {
-    html += `<div class="card"><h3>Task list</h3><ul>` + r.tasks.map((t) => `
-      <li>[${t.status === "completed" ? "x" : " "}] ${esc(t.title)}
-        <span class="meta">— ${esc(t.owner_role)}, ${esc(t.priority)},
-        due in ${t.due_offset_days}d</span></li>`).join("") + `</ul></div>`;
+    const done = r.tasks.filter((t) => t.status === "completed").length;
+    html += `<div class="section enter"><h3>Task list — ${done}/${r.tasks.length} done</h3>
+      <ul class="plain">${r.tasks.map((t) => `
+        <li><span class="tick ${t.status === "completed" ? "done" : ""}">${
+          t.status === "completed" ? "[x]" : "[ ]"}</span>${esc(t.title)}
+          <span class="muted"> — ${esc(t.owner_role)}, ${esc(t.priority)}, due in ${t.due_offset_days}d</span>
+        </li>`).join("")}</ul></div>`;
   }
-  $("result").innerHTML = html;
+  return html;
 }
 
-$("ask").addEventListener("submit", async (event) => {
+const SUGGESTIONS = [
+  "how many customers are on pro?",
+  "how many tasks are done for them?",
+  "what is their phone number?",
+  "add a customer called Bob",
+];
+
+function chatMarkup(s) {
+  const turns = s.turns.map((t) => `
+    <div class="turn">
+      <div class="q">${esc(t.question)}</div>
+      <div class="a${t.pending ? " muted" : ""}">${t.pending ? "…" : esc(t.answer)}</div>
+      ${t.tool_calls && t.tool_calls.length ? `<div class="tools">${esc(t.tool_calls.join(" · "))}</div>` : ""}
+    </div>`).join("");
+
+  return `<div class="section enter">
+    <h3>Ask about the customers</h3>
+    <div id="log">${turns || `<p class="empty" style="margin:0">Read-only, over the customer
+      registry and each customer's task list — and it is never given a phone number.</p>`}</div>
+    <form class="ask" id="ask">
+      <input id="question" placeholder="Ask a question…" autocomplete="off" aria-label="Question">
+      <button type="submit">Ask</button>
+    </form>
+    <div class="suggest">${SUGGESTIONS.map((q) =>
+      `<button type="button" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>
+    ${s.error ? `<p class="err">${esc(s.error)}</p>` : ""}
+  </div>`;
+}
+
+/* --- actions -------------------------------------------------------------- */
+
+$("form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const question = $("question").value.trim();
-  if (!question || !sessionId) return;
-  $("chat-error").textContent = "";
-  $("question").value = "";
-  const turn = document.createElement("div");
-  turn.className = "turn";
-  turn.innerHTML = `<div class="q">${esc(question)}</div><div class="a meta">thinking…</div>`;
-  if ($("log").querySelector(".empty")) $("log").innerHTML = "";
-  $("log").appendChild(turn);
-  $("log").scrollTop = $("log").scrollHeight;
+  const id = active;
+  const s = state(id);
+  s.busy = true; s.error = ""; $("form-error").textContent = "";
+  $("submit").disabled = true;
+  renderPanel();
+
   try {
-    const reply = await api("/api/chat", { session_id: sessionId, question });
-    turn.querySelector(".a").classList.remove("meta");
-    turn.querySelector(".a").textContent = reply.answer;
-    if (reply.tool_calls.length) {
-      const tools = document.createElement("div");
-      tools.className = "tools";
-      tools.textContent = "tools: " + reply.tool_calls.join(", ");
-      turn.appendChild(tools);
-    }
+    const payload = Object.fromEntries(new FormData($("form")).entries());
+    payload.framework = id;
+    const result = await api("/api/onboard", payload);
+    s.result = result;
+    s.session = result.session_id;
+    s.turns = [];
   } catch (error) {
-    turn.querySelector(".a").textContent = "";
-    $("chat-error").textContent = error.message;
+    s.error = error.message;
+    if (id === active) $("form-error").textContent = error.message;
+  } finally {
+    s.busy = false;
+    $("submit").disabled = false;
+    renderTabs();
+    if (id === active) renderPanel();
   }
-  $("log").scrollTop = $("log").scrollHeight;
 });
 
-loadConfig().catch((error) => { $("banner").textContent = error.message; });
+function bindChat() {
+  const form = $("ask");
+  if (!form) return;
+  form.addEventListener("submit", (event) => { event.preventDefault(); ask($("question").value); });
+  document.querySelectorAll(".suggest button").forEach((b) =>
+    b.addEventListener("click", () => ask(b.dataset.q)));
+}
+
+async function ask(question) {
+  question = (question || "").trim();
+  const id = active;
+  const s = state(id);
+  if (!question || !s.session) return;
+
+  const turn = { question, answer: "", tool_calls: [], pending: true };
+  s.turns.push(turn);
+  s.error = "";
+  renderPanel();
+
+  try {
+    const reply = await api("/api/chat", { session_id: s.session, question });
+    turn.answer = reply.answer;
+    turn.tool_calls = reply.tool_calls;
+  } catch (error) {
+    s.turns.pop();
+    s.error = error.message;
+  } finally {
+    turn.pending = false;
+    if (id === active) renderPanel();
+  }
+}
+
+boot().catch((error) => {
+  $("status").innerHTML = `<span class="pill off">${esc(error.message)}</span>`;
+});
 </script>
 </body>
 </html>
