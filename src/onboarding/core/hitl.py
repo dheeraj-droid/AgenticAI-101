@@ -72,14 +72,14 @@ class ResumeIndex:
         if not self.path.exists():
             return {}
         try:
-            return json.loads(self.path.read_text())
+            return json.loads(self.path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             return {}
 
     def put(self, entry: ResumeEntry) -> None:
         data = self._load()
         data[entry.run_id] = json.loads(entry.model_dump_json())
-        self.path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+        self.path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     def get(self, run_id: str) -> ResumeEntry:
         data = self._load()
@@ -95,7 +95,7 @@ class ResumeIndex:
         data = self._load()
         if run_id in data:
             data[run_id]["status"] = status
-            self.path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+            self.path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 @concept(Concept.HUMAN_IN_THE_LOOP, Concept.AUTONOMOUS_VS_ASSISTIVE)

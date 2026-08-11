@@ -94,7 +94,7 @@ def test_append_and_read_back() -> None:
 def test_header_written_once() -> None:
     append_customer(make_record("T-1", email="a@one.com"), run_id="r1")
     append_customer(make_record("T-2", company="Other Co", email="b@two.com"), run_id="r2")
-    text = registry_path().read_text()
+    text = registry_path().read_text(encoding="utf-8")
     assert text.count("record_id,customer_name") == 1
     assert len(read_all()) == 2
 
@@ -124,7 +124,7 @@ def test_find_customer_by_several_keys() -> None:
 def test_export_writes_a_readable_csv(tmp_path) -> None:
     append_customer(make_record())
     destination = export_csv(tmp_path / "out.csv")
-    text = destination.read_text()
+    text = destination.read_text(encoding="utf-8")
     assert "Ada Lovelace" in text
     assert text.splitlines()[0].startswith("record_id,")
 

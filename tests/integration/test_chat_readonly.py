@@ -75,7 +75,7 @@ def test_no_chat_tool_can_write(fn) -> None:
 
 def test_qa_module_never_imports_the_write_path() -> None:
     """core.qa is the only thing the chat tools reach; it must stay read-only."""
-    tree = ast.parse((SRC / "core" / "qa.py").read_text())
+    tree = ast.parse((SRC / "core" / "qa.py").read_text(encoding="utf-8"))
     imported: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
@@ -87,7 +87,7 @@ def test_qa_module_never_imports_the_write_path() -> None:
 
 
 def test_chat_tools_never_import_the_write_path() -> None:
-    tree = ast.parse((SRC / "chat" / "tools.py").read_text())
+    tree = ast.parse((SRC / "chat" / "tools.py").read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module:
             assert "mailer" not in node.module, "a chat tool can reach the mailer"

@@ -45,7 +45,7 @@ def _imported_modules(tree: ast.AST) -> set[str]:
 @pytest.mark.parametrize("path", _python_files(), ids=lambda p: p.name)
 def test_no_platform_specific_stdlib_imports(path: Path) -> None:
     """A Unix-only import makes the package unusable on Windows, and vice versa."""
-    offenders = _imported_modules(ast.parse(path.read_text())) & PLATFORM_SPECIFIC
+    offenders = _imported_modules(ast.parse(path.read_text(encoding="utf-8"))) & PLATFORM_SPECIFIC
     assert not offenders, (
         f"{path.relative_to(SRC)} imports {sorted(offenders)}, which does not exist on every "
         "platform. Use a cross-platform library instead — filelock for locking, "
@@ -59,7 +59,7 @@ def test_the_registry_lock_is_cross_platform() -> None:
     Checked against the import list, not the file text — the module docstring
     legitimately mentions fcntl to explain why it is gone.
     """
-    imported = _imported_modules(ast.parse((SRC / "core" / "registry.py").read_text()))
+    imported = _imported_modules(ast.parse((SRC / "core" / "registry.py").read_text(encoding="utf-8")))
     assert "fcntl" not in imported
     assert "filelock" in imported
 
@@ -67,7 +67,7 @@ def test_the_registry_lock_is_cross_platform() -> None:
 @pytest.mark.parametrize("path", _python_files(), ids=lambda p: p.name)
 def test_paths_are_not_built_by_string_concatenation(path: Path) -> None:
     """Hard-coded "/" separators break on Windows. Use pathlib's / operator."""
-    for line_no, line in enumerate(path.read_text().splitlines(), 1):
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         stripped = line.strip()
         if stripped.startswith("#") or "http" in line or "://" in line:
             continue
@@ -84,7 +84,8 @@ def test_every_module_imports_cleanly() -> None:
     for path in _python_files():
         if path.name == "__init__.py":
             continue
-        module = "onboarding." + str(path.relative_to(SRC).with_suffix("")).replace("/", ".")
+        # Build from path parts, not by replacing "/" — the separator is "\\" on Windows.
+        module = ".".join(("onboarding", *path.relative_to(SRC).with_suffix("").parts))
         importlib.import_module(module)
 
 
@@ -108,3 +109,32 @@ def test_writing_the_registry_creates_and_releases_the_lock(valid_record) -> Non
     append_customer(other, run_id="r2")
     assert len(read_all()) == 2
     assert lock_path().parent.exists()
+
+
+@pytest.mark.parametrize("path", _python_files(), ids=lambda p: p.name)
+def test_text_file_io_declares_an_encoding(path: Path) -> None:
+    """Windows defaults to cp1252, not UTF-8.
+
+    `docs/comparison.md` is full of em-dashes and arrows, so writing it without
+    an explicit encoding raised UnicodeEncodeError on Windows. Any read_text,
+    write_text or open on a text file must name its encoding.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+        if name not in ("read_text", "write_text", "open"):
+            continue
+        # Binary mode needs no encoding.
+        mode = next(
+            (a.value for a in node.args[1:2] if isinstance(a, ast.Constant)),
+            next((k.value.value for k in node.keywords
+                  if k.arg == "mode" and isinstance(k.value, ast.Constant)), ""),
+        )
+        if isinstance(mode, str) and "b" in mode:
+            continue
+        assert any(k.arg == "encoding" for k in node.keywords), (
+            f"{path.relative_to(SRC)}:{node.lineno} calls {name}() without encoding= — "
+            "Windows will decode it as cp1252 and choke on any non-ASCII character"
+        )
