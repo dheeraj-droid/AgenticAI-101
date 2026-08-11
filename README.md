@@ -45,9 +45,13 @@ cp .env.example .env                # already set up for Ollama
 uv run onboarding run --framework langgraph --record fixtures/customers/valid_smb.json
 ```
 
-`.env.example` also carries an Anthropic profile — Anthropic exposes an
-OpenAI-compatible `/v1/chat/completions`, so switching providers is three
-environment variables and no code change.
+`.env.example` also carries **Anthropic** and **Gemini** profiles — both expose
+an OpenAI-compatible `/v1/chat/completions`, so switching providers is three
+environment variables and no code change. Gemini's free tier is verified working
+(mind the 5/min and 20/day per-model caps; each chat question costs two calls).
+Gemini **3.x** models are not usable: they require a `thought_signature` on
+function-call parts that the OpenAI-compatible clients don't send, so tool
+calling fails with a 400 — stay on 2.5.
 
 **There is no stub or fake model anywhere in `src/`.** A missing endpoint raises
 `LlmNotConfiguredError` with instructions. A test enforces this: a silent
