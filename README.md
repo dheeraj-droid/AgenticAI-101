@@ -25,30 +25,81 @@ the entire point.
 
 ---
 
-## Quick start
+## Demo it in five minutes
+
+### 1. Install
 
 ```bash
+git clone https://github.com/dheeraj-droid/AgenticAI-101.git
+cd AgenticAI-101
 uv sync --extra dev --extra nlp     # nlp = the spaCy model Presidio uses
-uv run onboarding doctor            # check the environment, no model needed
-uv run pytest                       # 583 tests, no API key required
+uv run onboarding doctor            # all four adapters should say ok
 ```
 
-### The web page
+`doctor` will report **LLM endpoint: not configured** — that is expected, and
+everything policy-driven still runs. Step 2 fixes it.
+
+### 2. Point it at a model
+
+Any OpenAI-compatible endpoint drives all four frameworks. Free and local:
+
+```bash
+ollama pull qwen2.5:3b-instruct
+ollama serve
+cp .env.example .env                # already set up for Ollama
+```
+
+Or edit `.env` for Groq / Gemini / Anthropic — three variables, no code change.
+
+### 3. Run the page
 
 ```bash
 uv run onboarding serve             # http://127.0.0.1:8000
 ```
 
-One page: fill in a customer, pick one of the four frameworks, submit. The agent
-validates the record, checks for a duplicate, registers them, writes the welcome
-email and sends the task list to the support address — and the page shows you
-each message it produced and whether it was actually transmitted. Then the chat
+Fill in a customer, pick one of the four frameworks, submit. The agent validates
+the record, checks for a duplicate, registers them, writes the welcome email and
+sends the task list to the support address — and the page shows you every
+message it produced **and whether it was actually transmitted**. Then the chat
 panel opens underneath, backed by the customer registry.
 
-Add `--send` to transmit for real; see [Real mail](#real-mail) first, because
-nothing is sent until an address is explicitly approved.
+**Submit the same customer twice.** The second run takes the duplicate branch:
+no registration, no model call, and a plain "you already have an account" note
+instead of a welcome email.
 
-### Or one command per agent, in the terminal
+**Then switch the framework and submit a different customer.** Same page, same
+form, same pipeline — the only thing that changed is which agent framework ran
+it, which is the whole point.
+
+Things to ask the chat panel:
+
+```
+how many customers are on pro?
+how many tasks are done for Ada?
+what plan is Northwind Trading on?
+what is their phone number?      ← it does not have one, and says so
+add a customer called Bob         ← it cannot write, and says so
+```
+
+### 4. Real mail (optional)
+
+```bash
+# in .env
+SMTP_HOST=smtp.gmail.com
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=<16-char App Password, spaces removed>
+ONBOARDING_FROM_EMAIL=you@gmail.com
+ONBOARDING_SUPPORT_EMAIL=you+support@gmail.com
+ONBOARDING_ALLOWED_RECIPIENTS=you@gmail.com     # nothing is sent to anyone else
+
+uv run onboarding serve --send
+```
+
+Use your own address in the form. Mail to anything not on
+`ONBOARDING_ALLOWED_RECIPIENTS` is refused, and the page tells you it was
+refused rather than implying it went out. See [Real mail](#real-mail).
+
+### The same thing in the terminal
 
 ```bash
 uv run onboarding demo --framework maf
@@ -61,21 +112,28 @@ Each onboards a customer, prints the draft, and drops you into a conversation
 about the customer it just processed. `onboarding` with no arguments does the
 same thing with defaults.
 
-### Point it at a model (free and local)
-
-Everything above runs without a model. To draft emails you need one
-OpenAI-compatible endpoint — the same config serves all four frameworks:
+### Worth showing off
 
 ```bash
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5:3b-instruct
-ollama serve
+uv run onboarding run -f langgraph -r fixtures/customers/injection_attempt.json
+#   the poisoned notes never reach a model; the record goes to a human
 
-cp .env.example .env                # already set up for Ollama
-uv run onboarding run --framework langgraph --record fixtures/customers/valid_smb.json
+uv run onboarding run -f maf -r fixtures/customers/enterprise_high_value.json
+#   pauses at the approval gate and prints a run_id
+uv run onboarding pending
+uv run onboarding resume --run-id <id> --decision approve --by you
+#   ...resumed from a completely different process
+
+uv run onboarding registry show          # the CSV, phone numbers masked
+uv run onboarding outbox                 # every message produced
+uv run onboarding compare                # all four, side by side
+uv run onboarding concepts               # every principle → the code that implements it
+uv run pytest                            # 563 tests, no API key required
 ```
 
-### Any OpenAI-compatible provider
+---
+
+## Any OpenAI-compatible provider
 
 Nothing in the model wiring names a provider — `core/llm.py` only ever passes
 `base_url`, `model` and `api_key` through. **Switching provider is three
@@ -365,6 +423,6 @@ See [`docs/concepts.md`](docs/concepts.md) for the generated table.
 ## Testing
 
 ```bash
-uv run pytest              # 583 model-free tests
+uv run pytest              # 563 model-free tests
 uv run pytest -m llm       # 38 more, needs an endpoint (skips without one)
 ```
