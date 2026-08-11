@@ -77,6 +77,30 @@ async def test_injection_record_never_reaches_a_model(record, record_path) -> No
         assert result.registered is False, f"{framework} registered a poisoned record"
 
 
+async def test_the_frameworks_agree_on_the_decision_but_not_on_the_route(
+    record, record_path
+) -> None:
+    """The comparison in one assertion.
+
+    Identical deterministic outcomes, and four visibly different traces getting
+    there — which is the evidence that each adapter really is running its own
+    framework rather than sharing one implementation behind four names.
+    """
+    results = await _run_all(record("invalid_missing_fields"), record_path("invalid_missing_fields"))
+
+    outcomes = {r.deterministic().model_dump_json() for r in results.values()}
+    assert len(outcomes) == 1, "the frameworks disagreed on the decision"
+
+    routes = {fw: tuple(s.name for s in r.trace) for fw, r in results.items()}
+    assert all(routes.values()), f"a framework reported no trace: {routes}"
+    assert routes["maf"] != routes["langgraph"], (
+        "the two graphs reported identical traces, so neither is evidence of anything"
+    )
+    # LangGraph names a rewrite_query node that MAF folds into its plan executor.
+    assert "rewrite_query" in routes["langgraph"]
+    assert "rewrite_query" not in routes["maf"]
+
+
 async def test_invalid_record_never_reaches_a_model(record, record_path) -> None:
     results = await _run_all(record("invalid_missing_fields"), record_path("invalid_missing_fields"))
     for framework, result in results.items():

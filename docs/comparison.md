@@ -1,6 +1,6 @@
 # Framework comparison: Customer Onboarding Assistant
 
-_Generated 2026-08-11 06:12 UTC — 5 fixtures × 4 frameworks._
+_Generated 2026-08-11 06:53 UTC — 5 fixtures × 4 frameworks._
 
 ## Environment
 
@@ -74,7 +74,7 @@ _Generated 2026-08-11 06:12 UTC — 5 fixtures × 4 frameworks._
 | email words | — | — | — | — |
 | prompt versions | — | — | — | — |
 | llm calls | 0 | 0 | 0 | 0 |
-| duration ms | 441 | 422 | 455 | 423 |
+| duration ms | 381 | 372 | 386 | 397 |
 
 **IDENTICAL** — all frameworks agree on every deterministic field.
 
@@ -95,7 +95,7 @@ _Generated 2026-08-11 06:12 UTC — 5 fixtures × 4 frameworks._
 | email words | — | — | — | — |
 | prompt versions | — | — | — | — |
 | llm calls | 0 | 0 | 0 | 0 |
-| duration ms | 621 | 434 | 423 | 392 |
+| duration ms | 563 | 349 | 374 | 365 |
 
 **IDENTICAL** — all frameworks agree on every deterministic field.
 

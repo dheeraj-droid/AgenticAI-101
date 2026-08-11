@@ -199,6 +199,23 @@ class RiskAssessment(BaseModel):
     reasons: list[str] = Field(default_factory=list)
 
 
+class TraceStep(BaseModel):
+    """One step a framework actually executed, named the way that framework names it.
+
+    This is the evidence that a given adapter really ran: MAF reports executor
+    ids, LangGraph reports graph nodes, LangChain reports the tools its agent
+    chose at runtime, CrewAI reports agents and tasks. Deliberately excluded from
+    ``DeterministicOutcome`` — the trace is the part that *should* differ.
+    """
+
+    model_config = _VALUE
+
+    seq: int
+    name: str
+    kind: Literal["node", "executor", "tool", "agent", "task", "step"]
+    detail: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Action
 # ---------------------------------------------------------------------------
@@ -315,6 +332,7 @@ class OnboardingResult(BaseModel):
     escalation_queue: list[str] = Field(default_factory=list)
 
     prompt_refs: list[PromptRef] = Field(default_factory=list)
+    trace: list[TraceStep] = Field(default_factory=list)
     audit_log_path: str = ""
     audit_event_ids: list[str] = Field(default_factory=list)
 
@@ -328,6 +346,8 @@ class OnboardingResult(BaseModel):
     error: str | None = None
 
     def deterministic(self) -> DeterministicOutcome:
+        # Note what is absent: `trace`. Two frameworks reaching the same decision
+        # by different routes is the expected result, not a divergence.
         return DeterministicOutcome(
             record_id=self.record_id,
             status=self.status,
@@ -372,6 +392,7 @@ class OnboardingState(BaseModel):
     status: RunStatus = "completed"
     escalation_queue: list[str] = Field(default_factory=list)
     prompt_refs: list[PromptRef] = Field(default_factory=list)
+    trace: list[TraceStep] = Field(default_factory=list)
     audit_event_ids: list[str] = Field(default_factory=list)
     llm_calls: int = 0
     repair_attempts: int = 0

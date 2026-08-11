@@ -175,6 +175,83 @@ def test_every_submission_gets_a_chat_session(client) -> None:
     assert body["session_id"]
 
 
+# --- stats -------------------------------------------------------------------
+
+
+def test_stats_start_at_zero_and_name_every_plan(client) -> None:
+    stats = client.get("/api/stats").json()
+    assert stats["customers"] == 0
+    assert [p["plan"] for p in stats["by_plan"]] == ["free", "pro", "pro+"]
+    assert stats["tasks_total"] == 0
+
+
+def test_stats_count_customers_and_tasks(client) -> None:
+    from onboarding.core.planning import derive_tasks
+    from onboarding.core.risk import assess_risk
+    from onboarding.core.tasks import mark, write_tasks
+
+    record = OnboardRequest(**{**FORM, "plan": "pro+"}).to_record()
+    append_customer(record, run_id="seed")
+    tasks = derive_tasks(record, [], assess_risk(record, [], []))
+    write_tasks(record.record_id, tasks)
+    mark(record.record_id, tasks[0].task_id)
+
+    stats = client.get("/api/stats").json()
+    assert stats["customers"] == 1
+    assert {p["plan"]: p["count"] for p in stats["by_plan"]}["pro+"] == 1
+    assert stats["tasks_total"] == len(tasks)
+    assert stats["tasks_completed"] == 1
+
+
+def test_stats_are_read_only(client) -> None:
+    """The strip is a view of the registry; looking at it must not change it."""
+    from onboarding.core.registry import registry_path
+
+    append_customer(OnboardRequest(**FORM).to_record(), run_id="seed")
+    before = registry_path().read_bytes()
+    client.get("/api/stats")
+    client.get("/api/stats")
+    assert registry_path().read_bytes() == before
+
+
+# --- the execution trace -----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("framework", "kind", "expected"),
+    [
+        ("maf", "executor", ["ingest", "plan", "risk_gate", "escalate"]),
+        ("langgraph", "node", ["ingest", "plan", "rewrite_query", "risk_gate", "escalate"]),
+    ],
+)
+def test_the_graphs_report_their_own_step_names(client, framework, kind, expected) -> None:
+    """The page's evidence that a specific framework really ran.
+
+    LangGraph has a ``rewrite_query`` node that MAF folds into its plan executor,
+    so the two traces differ in a way no amount of labelling could fake.
+    """
+    body = client.post("/api/onboard", json={**FORM, "framework": framework, "products": ""}).json()
+
+    assert [t["name"] for t in body["trace"]] == expected
+    assert {t["kind"] for t in body["trace"]} == {kind}
+    assert [t["seq"] for t in body["trace"]] == list(range(1, len(expected) + 1))
+
+
+def test_every_framework_reports_a_trace(client) -> None:
+    for framework in ("maf", "langchain", "langgraph", "crew"):
+        body = client.post(
+            "/api/onboard", json={**FORM, "framework": framework, "products": ""}
+        ).json()
+        assert body["trace"], f"{framework} reported no trace"
+
+
+def test_the_trace_is_excluded_from_the_cross_framework_comparison() -> None:
+    """Two frameworks reaching one decision by different routes is the point."""
+    from onboarding.core.schemas import DeterministicOutcome
+
+    assert "trace" not in DeterministicOutcome.model_fields
+
+
 # --- the chat endpoint -------------------------------------------------------
 
 

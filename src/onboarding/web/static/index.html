@@ -212,6 +212,48 @@ button:disabled { opacity: 0.55; cursor: default; transform: none; }
 .tabs-active .tab[data-ran="true"] .dot { opacity: 0.45; transform: scale(1); }
 
 /* ---------------------------------------------------------------------------
+   Stats strip
+   --------------------------------------------------------------------------- */
+.stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 1px; background: var(--line);
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  overflow: hidden; margin-bottom: 24px;
+}
+.stat { background: var(--surface); padding: 12px 14px; }
+.stat .n {
+  font-size: 21px; font-weight: 600; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums; line-height: 1.2;
+}
+.stat .k {
+  font-size: 11px; font-weight: 500; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--text-3); margin-top: 2px;
+}
+.stat.zero .n { color: var(--text-3); }
+
+/* ---------------------------------------------------------------------------
+   Trace — what this framework actually executed
+   --------------------------------------------------------------------------- */
+.trace { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.step {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 4px 9px; border-radius: var(--r-sm);
+  background: var(--sunken); border: 1px solid var(--line-soft);
+  font: 12px/1.5 var(--mono);
+}
+.step .kind {
+  font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3);
+}
+.step[data-kind="tool"]     { background: var(--good-bg); border-color: transparent; color: var(--good); }
+.step[data-kind="agent"]    { background: var(--warn-bg); border-color: transparent; color: var(--warn); }
+.step[data-kind="task"]     { background: var(--warn-bg); border-color: transparent; color: var(--warn); }
+.step[data-kind="tool"] .kind,
+.step[data-kind="agent"] .kind,
+.step[data-kind="task"] .kind { color: inherit; opacity: 0.7; }
+.arrow { color: var(--text-3); font-size: 11px; }
+.trace-note { font-size: 12px; color: var(--text-3); margin-top: 10px; }
+
+/* ---------------------------------------------------------------------------
    Result
    --------------------------------------------------------------------------- */
 #panelbody { padding: 18px; }
@@ -366,6 +408,8 @@ ul.plain li + li { border-top: 1px solid var(--line-soft); }
 
 <main>
   <!-- ------------------------------------------------------------------ -->
+  <div style="grid-column: 1 / -1"><div class="stats" id="stats"></div></div>
+
   <section class="panel">
     <div class="body">
       <p class="eyebrow">New customer</p>
@@ -468,6 +512,24 @@ async function boot() {
   renderStatus();
   renderTabs();
   renderPanel();
+  refreshStats();
+}
+
+/** The registry at a glance. Every number is counted server-side. */
+async function refreshStats() {
+  let stats;
+  try { stats = await api("/api/stats"); } catch { return; }
+  const cells = [
+    { n: stats.customers, k: "customers" },
+    ...stats.by_plan.map((p) => ({ n: p.count, k: `on ${p.plan}` })),
+    { n: `${stats.tasks_completed}/${stats.tasks_total}`, k: "tasks done",
+      zero: stats.tasks_total === 0 },
+  ];
+  $("stats").innerHTML = cells.map((c) => `
+    <div class="stat${c.zero || c.n === 0 ? " zero" : ""}">
+      <div class="n">${esc(c.n)}</div><div class="k">${esc(c.k)}</div>
+    </div>`).join("");
+  $("stats").title = `Registry: ${stats.registry_path}`;
 }
 
 function renderStatus() {
@@ -477,11 +539,14 @@ function renderStatus() {
     : `<span class="pill off">no model configured</span>`);
 
   const mail = config.mail;
-  if (mail.sending) {
+  if (mail.sending && mail.approved_recipients.includes("*")) {
+    // Amber, not green: whatever is typed into the form receives real mail.
+    bits.push(`<span class="pill off" title="ONBOARDING_ALLOWED_RECIPIENTS=*">`
+      + `sending to any address</span>`);
+  } else if (mail.sending) {
     const n = mail.approved_recipients.length;
-    bits.push(mail.approved_recipients.includes("*")
-      ? `<span class="pill on">sending to any address</span>`
-      : `<span class="pill on">sending to ${n} approved address${n === 1 ? "" : "es"}</span>`);
+    bits.push(`<span class="pill on" title="${esc(mail.approved_recipients.join(", "))}">`
+      + `sending to ${n} approved address${n === 1 ? "" : "es"}</span>`);
   } else {
     bits.push(`<span class="pill">outbox only</span>`);
   }
@@ -604,6 +669,16 @@ function resultMarkup(r) {
   }
   html += `</div>`;
 
+  if (r.trace.length) {
+    const label = config.frameworks.find((f) => f.id === r.framework);
+    html += `<div class="section enter"><h3>What ${esc(label ? label.full_name : r.framework)} ran</h3>
+      <div class="trace">${r.trace.map((t, i) => `
+        ${i ? '<span class="arrow">→</span>' : ""}
+        <span class="step" data-kind="${esc(t.kind)}"${t.detail ? ` title="${esc(t.detail)}"` : ""}>
+          ${esc(t.name)}<span class="kind">${esc(t.kind)}</span></span>`).join("")}</div>
+      <p class="trace-note">${esc(TRACE_NOTE[r.framework] || "")}</p></div>`;
+  }
+
   if (r.mail.length) {
     html += `<div class="section enter"><h3>Mail — ${r.mail.length}</h3>` + r.mail.map((m, i) => `
       <details class="mail"${i === 0 ? " open" : ""}>
@@ -628,6 +703,14 @@ function resultMarkup(r) {
   }
   return html;
 }
+
+/** Why each framework's trace looks the way it does. */
+const TRACE_NOTE = {
+  maf: "Typed executors, in the order the workflow's edges routed the record.",
+  langgraph: "Graph nodes, in the order the compiled graph entered them.",
+  langchain: "Deterministic steps, plus every tool the agent chose for itself — nobody wrote that order down.",
+  crew: "Deterministic steps, plus the crew's agents and the task each of them ran.",
+};
 
 const SUGGESTIONS = [
   "how many customers are on pro?",
@@ -683,6 +766,7 @@ $("form").addEventListener("submit", async (event) => {
     $("submit").disabled = false;
     renderTabs();
     if (id === active) renderPanel();
+    refreshStats();
   }
 });
 

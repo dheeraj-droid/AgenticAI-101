@@ -22,14 +22,17 @@ from onboarding.adapters.base import get_adapter
 from onboarding.core.audit import default_sink, new_run_id
 from onboarding.core.config import paths
 from onboarding.core.schemas import CustomerRecord, OnboardingResult
-from onboarding.core.tasks import read_tasks
+from onboarding.core.tasks import all_summaries, read_tasks
 from onboarding.web.models import (
     ChatResponse,
     FindingView,
     MailView,
     OnboardRequest,
     OnboardResponse,
+    PlanCount,
+    Stats,
     TaskView,
+    TraceView,
     describe_outcome,
 )
 
@@ -129,6 +132,9 @@ def _describe(
             for t in result.tasks
         ],
         mail=_mail_views(result),
+        trace=[
+            TraceView(seq=t.seq, name=t.name, kind=t.kind, detail=t.detail) for t in result.trace
+        ],
         llm_calls=result.llm_calls,
         duration_ms=result.duration_ms,
     )
@@ -174,6 +180,26 @@ def _delivery_verdicts(run_id: str) -> dict[str, tuple[bool, str]]:
             str(event.payload.get("reason", "")),
         )
     return verdicts
+
+
+def stats() -> Stats:
+    """Everything the page shows at a glance, counted rather than estimated."""
+    from onboarding.core import qa
+    from onboarding.core.registry import registry_path
+
+    breakdown = qa.breakdown()
+    summaries = all_summaries()
+    # Known plans first and always present, so the row does not reshuffle as
+    # customers arrive; anything unexpected in the CSV is appended rather than
+    # silently dropped.
+    plans = [*qa.KNOWN_PLANS, *sorted(set(breakdown.counts) - set(qa.KNOWN_PLANS))]
+    return Stats(
+        customers=breakdown.total,
+        by_plan=[PlanCount(plan=p, count=breakdown.of(p)) for p in plans],
+        tasks_total=sum(s.total for s in summaries),
+        tasks_completed=sum(s.completed for s in summaries),
+        registry_path=str(registry_path()),
+    )
 
 
 def page() -> str:

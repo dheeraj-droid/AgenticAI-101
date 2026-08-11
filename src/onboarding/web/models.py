@@ -100,6 +100,17 @@ class FindingView(BaseModel):
     message: str
 
 
+class TraceView(BaseModel):
+    """One step the framework actually executed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    seq: int
+    name: str
+    kind: str
+    detail: str = ""
+
+
 class TaskView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -136,8 +147,28 @@ class OnboardResponse(BaseModel):
     escalation_queue: list[str] = Field(default_factory=list)
     tasks: list[TaskView] = Field(default_factory=list)
     mail: list[MailView] = Field(default_factory=list)
+    trace: list[TraceView] = Field(default_factory=list)
     llm_calls: int = 0
     duration_ms: int = 0
+
+
+class PlanCount(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan: str
+    count: int
+
+
+class Stats(BaseModel):
+    """The registry at a glance. Every number is counted in Python, not guessed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    customers: int = 0
+    by_plan: list[PlanCount] = Field(default_factory=list)
+    tasks_total: int = 0
+    tasks_completed: int = 0
+    registry_path: str = ""
 
 
 class ChatRequest(BaseModel):

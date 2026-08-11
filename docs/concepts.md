@@ -150,5 +150,6 @@ by all four frameworks.
 | Audit logging | `core` | `onboarding.core.steps:notify_already_registered` |
 | Audit logging | `core` | `onboarding.core.steps:register_customer` |
 | Audit logging | `core` | `onboarding.core.steps:send_notifications` |
+| Audit logging | `core` | `onboarding.core.steps:trace` |
 | Audit logging | `langgraph` | `onboarding.adapters.lg.nodes:finalize` |
 | Audit logging | `maf` | `onboarding.adapters.maf.executors:FinalizeExecutor.finalize` |

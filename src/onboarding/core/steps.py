@@ -53,6 +53,7 @@ from onboarding.core.schemas import (
     Reflection,
     RiskAssessment,
     RuleViolation,
+    TraceStep,
     WelcomeEmail,
 )
 from onboarding.core.tasks import write_tasks
@@ -62,6 +63,20 @@ from onboarding.core.validation import has_errors, validate_record
 PII_LEAK_RULE = "PII_LEAK"
 
 _SCANNER = InjectionScanner()
+
+
+@concept(Concept.AUDIT_LOGGING)
+def trace(state: OnboardingState, name: str, kind: str, detail: str = "") -> OnboardingState:
+    """Record that the framework executed a step, under that framework's own name.
+
+    Called from the adapters rather than from here, because the whole point is to
+    capture what the *framework* did — the executor it ran, the node it entered,
+    the tool its agent chose. ``core`` has no opinion about those names.
+    """
+    state.trace.append(
+        TraceStep(seq=len(state.trace) + 1, name=name, kind=kind, detail=detail)  # type: ignore[arg-type]
+    )
+    return state
 
 
 def new_state(record: CustomerRecord, run_id: str, framework: str) -> OnboardingState:
@@ -689,6 +704,7 @@ def finalize(state: OnboardingState, sink: JsonlAuditSink) -> OnboardingResult:
         registered=state.registered,
         mail_outbox=list(state.mail_outbox),
         prompt_refs=list(state.prompt_refs),
+        trace=list(state.trace),
         audit_log_path=str(sink.path),
         audit_event_ids=list(state.audit_event_ids) + list(sink.event_ids),
         started_at=started,

@@ -51,19 +51,19 @@ def _llm() -> LlmCaller:
 
 @concept(Concept.PERCEPTION)
 def ingest(payload: GraphState) -> GraphState:
-    state = _load(payload)
+    state = steps.trace(_load(payload), "ingest", "node")
     return _dump(steps.perceive(state, _sink(state)))
 
 
 @concept(Concept.PLANNING, Concept.LEAST_TO_MOST)
 def plan(payload: GraphState) -> GraphState:
-    state = _load(payload)
+    state = steps.trace(_load(payload), "plan", "node")
     return _dump(steps.plan(state, _sink(state)))
 
 
 @concept(Concept.QUERY_REWRITING)
 def rewrite_query(payload: GraphState) -> GraphState:
-    state = _load(payload)
+    state = steps.trace(_load(payload), "rewrite_query", "node")
     _sink(state).emit("plan_created", rewritten_query=state.plan.rewritten_query if state.plan else "")
     return _dump(state)
 
@@ -71,36 +71,36 @@ def rewrite_query(payload: GraphState) -> GraphState:
 @concept(Concept.CONDITIONAL_BRANCHING)
 def risk_gate(payload: GraphState) -> GraphState:
     # Risk is computed in plan(); this node exists so the branch has a named source.
-    return payload
+    return _dump(steps.trace(_load(payload), "risk_gate", "node"))
 
 
 @concept(Concept.ACTION)
 async def draft_email(payload: GraphState) -> GraphState:
-    state = _load(payload)
+    state = steps.trace(_load(payload), "draft_email", "node")
     return _dump(await steps.act_draft_email(state, _llm(), _sink(state)))
 
 
 @concept(Concept.ACTION)
 async def build_tasks(payload: GraphState) -> GraphState:
-    state = _load(payload)
+    state = steps.trace(_load(payload), "build_tasks", "node")
     return _dump(await steps.act_build_tasks(state, _sink(state), llm=_CONTEXT["llm"]))
 
 
 @concept(Concept.REFLECTION)
 def reflect(payload: GraphState) -> GraphState:
-    state = _load(payload)
+    state = steps.trace(_load(payload), "reflect", "node")
     return _dump(steps.reflect(state, _sink(state)))
 
 
 @concept(Concept.REFLECTION, Concept.NO_FABRICATED_CLAIMS)
 async def repair(payload: GraphState) -> GraphState:
-    state = _load(payload)
+    state = steps.trace(_load(payload), "repair", "node")
     return _dump(await steps.repair_email(state, _llm(), _sink(state)))
 
 
 @concept(Concept.CONFIDENCE_FALLBACK)
 def escalate(payload: GraphState) -> GraphState:
-    state = _load(payload)
+    state = steps.trace(_load(payload), "escalate", "node")
     sink = _sink(state)
     state = steps.escalate(state, sink)
     return _dump(steps.notify_already_registered(state, sink, allow_send=_CONTEXT["allow_send"]))
@@ -109,7 +109,7 @@ def escalate(payload: GraphState) -> GraphState:
 @concept(Concept.ACTION)
 def deliver(payload: GraphState) -> GraphState:
     """Register the customer, then mail the team and the customer."""
-    state = _load(payload)
+    state = steps.trace(_load(payload), "deliver", "node")
     sink = _sink(state)
     state = steps.register_customer(state, sink)
     return _dump(steps.send_notifications(state, sink, allow_send=_CONTEXT["allow_send"]))
@@ -117,7 +117,7 @@ def deliver(payload: GraphState) -> GraphState:
 
 @concept(Concept.AUDIT_LOGGING)
 def finalize(payload: GraphState) -> GraphState:
-    return _dump(_load(payload))
+    return _dump(steps.trace(_load(payload), "finalize", "node"))
 
 
 NODES = (

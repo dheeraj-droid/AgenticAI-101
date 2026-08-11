@@ -62,7 +62,7 @@ class IngestExecutor(Executor):
     @handler
     @concept(Concept.PERCEPTION)
     async def ingest(self, payload: StatePayload, ctx: WorkflowContext[dict[str, Any]]) -> None:
-        state = _load(payload)
+        state = steps.trace(_load(payload), self.id, "executor")
         await ctx.send_message(_dump(steps.perceive(state, _sink(state))))
 
 
@@ -75,7 +75,7 @@ class PlanExecutor(Executor):
     @handler
     @concept(Concept.PLANNING, Concept.LEAST_TO_MOST, Concept.QUERY_REWRITING)
     async def plan(self, payload: StatePayload, ctx: WorkflowContext[dict[str, Any]]) -> None:
-        state = _load(payload)
+        state = steps.trace(_load(payload), self.id, "executor")
         await ctx.send_message(_dump(steps.plan(state, _sink(state))))
 
 
@@ -88,7 +88,7 @@ class RiskGateExecutor(Executor):
     @handler
     @concept(Concept.CONDITIONAL_BRANCHING)
     async def gate(self, payload: StatePayload, ctx: WorkflowContext[dict[str, Any]]) -> None:
-        await ctx.send_message(payload)
+        await ctx.send_message(_dump(steps.trace(_load(payload), self.id, "executor")))
 
 
 class DraftEmailExecutor(Executor):
@@ -100,7 +100,7 @@ class DraftEmailExecutor(Executor):
     @handler
     @concept(Concept.ACTION, Concept.CHAIN_OF_THOUGHT)
     async def draft(self, payload: StatePayload, ctx: WorkflowContext[dict[str, Any]]) -> None:
-        state = _load(payload)
+        state = steps.trace(_load(payload), self.id, "executor")
         await ctx.send_message(_dump(await steps.act_draft_email(state, _llm(), _sink(state))))
 
 
@@ -113,7 +113,7 @@ class TaskListExecutor(Executor):
     @handler
     @concept(Concept.ACTION, Concept.WORKFLOW_DECOMPOSITION)
     async def build(self, payload: StatePayload, ctx: WorkflowContext[dict[str, Any]]) -> None:
-        state = _load(payload)
+        state = steps.trace(_load(payload), self.id, "executor")
         updated = await steps.act_build_tasks(state, _sink(state), llm=_CONTEXT["llm"])
         await ctx.send_message(_dump(updated))
 
@@ -127,7 +127,7 @@ class ReflectExecutor(Executor):
     @handler
     @concept(Concept.REFLECTION)
     async def review(self, payload: StatePayload, ctx: WorkflowContext[dict[str, Any]]) -> None:
-        state = _load(payload)
+        state = steps.trace(_load(payload), self.id, "executor")
         await ctx.send_message(_dump(steps.reflect(state, _sink(state))))
 
 
@@ -140,7 +140,7 @@ class RepairExecutor(Executor):
     @handler
     @concept(Concept.REFLECTION, Concept.NO_FABRICATED_CLAIMS)
     async def repair(self, payload: StatePayload, ctx: WorkflowContext[dict[str, Any]]) -> None:
-        state = _load(payload)
+        state = steps.trace(_load(payload), self.id, "executor")
         await ctx.send_message(_dump(await steps.repair_email(state, _llm(), _sink(state))))
 
 
@@ -153,7 +153,7 @@ class DeliverExecutor(Executor):
     @handler
     @concept(Concept.ACTION)
     async def deliver(self, payload: StatePayload, ctx: WorkflowContext[dict[str, Any]]) -> None:
-        state = _load(payload)
+        state = steps.trace(_load(payload), self.id, "executor")
         sink = _sink(state)
         state = steps.register_customer(state, sink)
         updated = steps.send_notifications(state, sink, allow_send=_CONTEXT["allow_send"])
@@ -169,7 +169,7 @@ class EscalateExecutor(Executor):
     @handler
     @concept(Concept.CONFIDENCE_FALLBACK)
     async def escalate(self, payload: StatePayload, ctx: WorkflowContext[Never, OnboardingResult]) -> None:
-        state = _load(payload)
+        state = steps.trace(_load(payload), self.id, "executor")
         sink = _sink(state)
         state = steps.escalate(state, sink)
         state = steps.notify_already_registered(state, sink, allow_send=_CONTEXT["allow_send"])
@@ -185,6 +185,6 @@ class FinalizeExecutor(Executor):
     @handler
     @concept(Concept.AUDIT_LOGGING)
     async def finalize(self, payload: StatePayload, ctx: WorkflowContext[Never, OnboardingResult]) -> None:
-        state = _load(payload)
+        state = steps.trace(_load(payload), self.id, "executor")
         sink = _sink(state)
         await ctx.yield_output(steps.finalize(state, sink))
