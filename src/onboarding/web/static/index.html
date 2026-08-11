@@ -127,6 +127,7 @@ input, select, textarea {
   transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 textarea { resize: vertical; min-height: 62px; }
+::placeholder { color: var(--text-3); opacity: 1; }
 input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: none;
   border-color: var(--accent);
@@ -418,10 +419,12 @@ ul.plain li + li { border-top: 1px solid var(--line-soft); }
         <input id="company_name" name="company_name" required value="Northwind Trading">
 
         <label for="full_name">Contact</label>
-        <input id="full_name" name="full_name" required value="Ada Lovelace">
+        <input id="full_name" name="full_name" required autofocus
+               placeholder="Who is signing up?">
 
         <label for="email">Email</label>
-        <input id="email" name="email" type="email" required value="ada@northwind.example">
+        <input id="email" name="email" type="email" required
+               placeholder="Where the welcome email goes">
 
         <label for="phone">Phone <span class="hint">— never shown to the model</span></label>
         <input id="phone" name="phone" value="+44 20 7946 0142">
