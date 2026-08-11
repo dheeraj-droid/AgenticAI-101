@@ -29,8 +29,9 @@ from onboarding.core.schemas import ApprovalDecision, OnboardingResult
 
 app = typer.Typer(
     help="Customer Onboarding Assistant — one core, three frameworks.",
-    no_args_is_help=True,
+    no_args_is_help=False,
     add_completion=False,
+    invoke_without_command=True,
 )
 prompts_app = typer.Typer(help="Inspect and verify the versioned prompt library.")
 app.add_typer(prompts_app, name="prompts")
@@ -38,6 +39,45 @@ registry_app = typer.Typer(help="Inspect the customer registry (read-only).")
 app.add_typer(registry_app, name="registry")
 
 console = Console()
+
+
+@app.callback()
+def default(ctx: typer.Context) -> None:
+    """Launch the interactive console when no subcommand is given.
+
+    `onboarding` on its own is the friendly entry point; the individual
+    subcommands remain for scripting and CI.
+    """
+    if ctx.invoked_subcommand is None:
+        from onboarding.cli.demo import run_demo
+
+        run_demo()
+
+
+@app.command()
+def demo(
+    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph")] = "langgraph",
+    record: Annotated[str, typer.Option("--record", "-r", help="Fixture name or path")] = "valid_smb",
+) -> None:
+    """Onboard a customer, then chat about them. The one command to see it all."""
+    from onboarding.cli.demo import run_demo
+
+    try:
+        run_demo(framework=framework, record_name=record)
+    except OnboardingError as exc:
+        console.print(f"[red]{type(exc).__name__}[/]: {exc}")
+        raise typer.Exit(code=1) from exc
+
+
+@app.command()
+def shell(
+    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph")] = "langgraph",
+    send: Annotated[bool, typer.Option("--send", help="Allow real mail delivery (needs SMTP_HOST)")] = False,
+) -> None:
+    """Open the interactive console: run records, approve, and ask questions."""
+    from onboarding.cli.shell import start
+
+    start(framework=framework, send=send)
 
 
 # ---------------------------------------------------------------------------
@@ -499,7 +539,7 @@ def outbox(
     console.print("[dim]These were written locally. Nothing was transmitted.[/]")
 
 
-def _print_result(result: OnboardingResult) -> None:
+def _print_result(result: OnboardingResult, *, in_shell: bool = False) -> None:
     colour = {
         "completed": "green",
         "blocked_awaiting_approval": "yellow",
@@ -543,10 +583,11 @@ def _print_result(result: OnboardingResult) -> None:
 
     if result.status == "blocked_awaiting_approval":
         if result.resume_supported:
-            console.print(
-                f"\n[yellow]Waiting for a human.[/] Resume with:\n"
-                f"  onboarding resume --run-id {result.run_id} --decision approve"
+            # Show the syntax for wherever the user actually is.
+            how = "/approve" if in_shell else (
+                f"onboarding resume --run-id {result.run_id} --decision approve"
             )
+            console.print(f"\n[yellow]Waiting for a human.[/] Resume with:\n  {how}")
         else:
             console.print(
                 "\n[yellow]Waiting for a human.[/] This adapter is stateless and cannot be "

@@ -28,8 +28,23 @@ the entire point.
 ```bash
 uv sync --extra dev --extra nlp     # nlp = the spaCy model Presidio uses
 uv run onboarding doctor            # check the environment, no model needed
-uv run pytest                       # 310 tests, no API key required
+uv run pytest                       # 481 tests, no API key required
 ```
+
+### See it work — one command per agent
+
+```bash
+uv run onboarding demo --framework maf
+uv run onboarding demo --framework langchain
+uv run onboarding demo --framework langgraph
+```
+
+Each onboards a customer — validates, masks PII, drafts the welcome email,
+builds the task list, registers them, writes the mail — prints the draft, and
+then drops you into a conversation about the customer it just processed. Run all
+three and you have watched the same workflow in all three frameworks.
+
+`onboarding` with no arguments does the same thing with defaults.
 
 ### Point it at a model (free and local)
 
