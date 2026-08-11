@@ -36,8 +36,6 @@ EventType = Literal[
     "tasks_generated",
     "reflection_completed",
     "rule_violation",
-    "approval_required",
-    "approval_decided",
     "customer_registered",
     "registration_skipped",
     "mail_sent",

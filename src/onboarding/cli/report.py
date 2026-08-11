@@ -51,7 +51,7 @@ def render_markdown(report: ComparisonReport) -> str:
         add(
             "> No LLM endpoint is configured, so no welcome email was drafted. Everything "
             "decided by policy — validation, masking, injection defense, risk, planning, the "
-            "task list and the approval gate — still ran, and is compared below."
+            "task list and the escalation gate — still ran, and is compared below."
         )
         add("")
 
@@ -62,12 +62,8 @@ def render_markdown(report: ComparisonReport) -> str:
     rows = [
         ("Multi-step", lambda c: "yes" if c.multi_step else "no"),
         ("Conditional branching", lambda c: "yes" if c.conditional_branching else "no"),
-        ("HITL pause", lambda c: "yes" if c.hitl_pause else "no"),
-        ("Durable resume", lambda c: "yes" if c.durable_resume else "**no**"),
         ("Tools", lambda c: "yes" if c.tools else "no"),
         ("Agents", lambda c: c.agent_count),
-        ("Statefulness", lambda c: c.statefulness),
-        ("Checkpoint backend", lambda c: c.checkpoint_backend),
     ]
     add("| Capability | " + " | ".join(report.frameworks) + " |")
     add("| --- |" + " --- |" * len(report.frameworks))
@@ -144,7 +140,6 @@ def _result_table(cells: list[RunOutcome], frameworks: tuple[str, ...]) -> str:
     rows: list[tuple[str, callable]] = [
         ("status", lambda r: r.status),
         ("risk band", lambda r: r.risk.band),
-        ("needs approval", lambda r: "yes" if r.risk.requires_human_approval else "no"),
         ("findings", lambda r: sorted(f.code for f in r.findings)),
         ("PII entities", lambda r: r.pii_entity_types),
         ("injection", lambda r: sorted({s.pattern_id for s in r.injection_signals})),
@@ -156,7 +151,6 @@ def _result_table(cells: list[RunOutcome], frameworks: tuple[str, ...]) -> str:
         ("email words", lambda r: r.welcome_email.word_count if r.welcome_email else "—"),
         ("prompt versions", lambda r: sorted(f"{p.id}@v{p.version}" for p in r.prompt_refs)),
         ("llm calls", lambda r: r.llm_calls),
-        ("resume token", lambda r: r.resume_token or "**none**"),
         ("duration ms", lambda r: r.duration_ms),
     ]
     lines = ["| Field | " + " | ".join(frameworks) + " |", "| --- |" + " --- |" * len(frameworks)]

@@ -35,7 +35,6 @@ class Concept(StrEnum):
     LEAST_TO_MOST = "Least-to-most planning"
     POLICY_CONSTRAINED = "Policy-constrained reasoning"
     WORKFLOW_DECOMPOSITION = "Workflow decomposition"
-    HUMAN_IN_THE_LOOP = "Human-in-the-loop checkpoint"
     CONDITIONAL_BRANCHING = "Conditional branching"
 
     # --- prompt engineering ----------------------------------------------
@@ -50,7 +49,6 @@ class Concept(StrEnum):
     NO_FABRICATED_CLAIMS = "No fabricated discounts / grounded claims"
     TONE_POLICY = "Tone policy"
     CONFIDENCE_FALLBACK = "Confidence-threshold fallback"
-    DURABLE_STATE = "Durable state & resume"
     AUDIT_LOGGING = "Audit logging"
 
 

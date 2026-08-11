@@ -108,7 +108,7 @@ def describe_registry() -> str:
     )
 
 
-# The complete, read-only tool surface. Shared by all three chat agents so the
+# The complete, read-only tool surface. Shared by all four chat agents so the
 # comparison stays honest: same tools, different orchestration.
 READ_ONLY_TOOLS = [
     count_customers_by_plan,

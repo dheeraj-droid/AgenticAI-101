@@ -114,7 +114,7 @@ class OnboardResponse(BaseModel):
     contact_name: str
     plan: str
     status: str
-    outcome: Literal["registered", "duplicate", "needs_approval", "blocked"]
+    outcome: Literal["registered", "duplicate", "blocked"]
     headline: str
     duplicate: bool
     registered: bool
@@ -156,6 +156,4 @@ def describe_outcome(result: OnboardingResult) -> tuple[str, str]:
         return "duplicate", "Already signed up — we sent them a note saying so."
     if result.registered:
         return "registered", "Registered. Welcome email sent, task list sent to support."
-    if result.status == "blocked_awaiting_approval":
-        return "needs_approval", "Held for human approval before anything is sent."
     return "blocked", "Not registered — see the findings below."

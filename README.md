@@ -8,10 +8,8 @@ over a **single shared core**:
 | | Microsoft Agent Framework | LangChain | LangGraph | CrewAI |
 |---|---|---|---|---|
 | Shape | executor graph + tools | one tool-using agent | multi-step graph | two-agent crew |
-| Branching | 2 switch-case groups + conditional edges | none (agent decides at runtime) | 3 conditional branch points | none (fixed sequence) |
-| HITL | `ctx.request_info()` | blocks, cannot resume | `interrupt()` | blocks, cannot resume |
-| State | `FileCheckpointStorage` | **none, by design** | `AsyncSqliteSaver` | **none** (`memory=False`) |
-| Resume across processes | yes | **no** | yes | **no** |
+| Branching | 2 switch-case groups | none (agent decides at runtime) | 2 conditional branch points | none (fixed sequence) |
+| Control flow visible before the run | yes (typed edges) | **no** (agent decides) | yes (graph is data) | partly (fixed order) |
 | LLM agent identities | 1 | 1 | 0 (plain calls) | **2** |
 
 Because all four call the same schemas, rules and pipeline, any difference in
@@ -116,19 +114,16 @@ same thing with defaults.
 
 ```bash
 uv run onboarding run -f langgraph -r fixtures/customers/injection_attempt.json
-#   the poisoned notes never reach a model; the record goes to a human
+#   the poisoned notes never reach a model: escalated, 0 model calls, not registered
 
-uv run onboarding run -f maf -r fixtures/customers/enterprise_high_value.json
-#   pauses at the approval gate and prints a run_id
-uv run onboarding pending
-uv run onboarding resume --run-id <id> --decision approve --by you
-#   ...resumed from a completely different process
+uv run onboarding run -f crew -r fixtures/customers/invalid_missing_fields.json
+#   a blocking validation error stops the run before drafting, in every framework
 
 uv run onboarding registry show          # the CSV, phone numbers masked
 uv run onboarding outbox                 # every message produced
 uv run onboarding compare                # all four, side by side
 uv run onboarding concepts               # every principle → the code that implements it
-uv run pytest                            # 563 tests, no API key required
+uv run pytest                            # 527 tests, no API key required
 ```
 
 ---
@@ -179,25 +174,20 @@ Perception  →  Planning  →  Action  →  Reflection
    the internal task list.
 4. **Reflection** — run the output validators, repair once, then escalate or ship.
 
-A **human-in-the-loop checkpoint** sits before the email is finalised. If the
-record is high-risk — enterprise tier, contract value over threshold, injection
-detected, or a blocking validation error — the run **pauses, writes an
-`approval_required` audit entry, marks the record BLOCKED and stops**. No email
-is drafted and no tokens are spent.
+**One gate sits before drafting.** A record with blocking validation errors, or
+one carrying a prompt-injection attempt, escalates: it is never drafted from,
+never registered, and costs no model call. Everything else is onboarded
+autonomously.
 
 ```bash
-uv run onboarding run --framework langgraph --record fixtures/customers/enterprise_high_value.json
-# -> blocked_awaiting_approval, prints a run_id
-
-uv run onboarding pending          # what's waiting on a human
-
-# ...later, from a completely different process:
-uv run onboarding resume --run-id <id> --decision approve --by alex
+uv run onboarding run --framework langgraph --record fixtures/customers/injection_attempt.json
+# -> escalated, llm_calls 0, registered no
 ```
 
-The LangChain adapter blocks identically but **cannot** be resumed — it has no
-checkpointer and no thread to return to. That is the stateless/stateful
-distinction made concrete rather than described.
+Risk scoring still runs, and still shapes the plan and the confidence floor — an
+enterprise record gets the `enterprise` strategy and an extra grounding step —
+but a high score is not a veto on its own. The two graphs route on one shared
+predicate, `OnboardingState.must_escalate`, so they cannot drift apart.
 
 ---
 
@@ -227,12 +217,12 @@ onboarding policy keeps speaking tiers while the business speaks plans.
 **Duplicate detection** rides the machinery that already exists rather than
 adding a branch. Same `record_id` or email is a *blocking error* → the run
 escalates and never re-registers. Same company or shared email domain is a
-*warning* → it routes to the human approval gate, because a second team at the
-same company is a legitimate thing to onboard and that call belongs to a person.
+*warning* → it is reported but does not stop the run, because a second team at
+the same company is a legitimate thing to onboard.
 
 A customer is written to the registry **only** on a run that completed cleanly:
-blocked, rejected, escalated and failed-reflection runs all leave the table
-untouched, checked explicitly rather than inferred from call order.
+escalated and failed-reflection runs leave the table untouched, checked
+explicitly rather than inferred from call order.
 
 ### Task lists
 
@@ -287,8 +277,8 @@ stop, so it is the one framework here with no native turn loop.
 Two properties are enforced by tests, not by prompt wording:
 
 - **The model cannot write.** Every tool it can reach is a pure query. There is
-  no path from any tool to the registry's write path, the mailer or the approval
-  store — `test_chat_readonly.py` walks each tool's call graph and fails the
+  no path from any tool to the registry's write path or the mailer —
+  `test_chat_readonly.py` walks each tool's call graph and fails the
   build if one appears. Ask it to add a customer and it will tell you it can't.
 - **It never has a phone number.** Not masked — *absent*. `VisibleCustomer` has
   no phone field at all, so there is no code path that could surface one and
@@ -328,8 +318,8 @@ the active engine is reported in every run.
 Free-text notes are attacker-controlled. The scanner catches instruction
 overrides, role reassignment, system impersonation, policy bypass, exfiltration
 attempts and unauthorised-discount demands — through unicode obfuscation and
-base64 wrapping. A blocking hit raises risk and forces the record to a human;
-the poisoned text never reaches a model at all.
+base64 wrapping. A blocking hit escalates the record before drafting, so the
+poisoned text never reaches a model at all.
 
 ### Versioned prompt library
 
@@ -376,7 +366,6 @@ src/onboarding/
     mailer.py        outbox by default, SMTP strictly opt-in
     tasks.py         one checklist CSV per customer, with completion status
     steps.py         perceive / plan / act / reflect / register / notify
-    hitl.py          pause, log, stop, resume
   adapters/
     maf/           Microsoft Agent Framework workflow + tools
     lc/            the single LangChain agent
@@ -384,8 +373,8 @@ src/onboarding/
     crew/          the two-agent CrewAI crew
   chat/          the read-only Q&A agent, in all four frameworks
   web/           the localhost demo page (FastAPI + one HTML file)
-  cli/           doctor, serve, demo, run, resume, pending, chat, registry,
-                 outbox, compare, concepts, prompts, audit
+  cli/           doctor, serve, demo, run, chat, registry, outbox,
+                 compare, concepts, prompts, audit
 ```
 
 Every adapter node is a wrapper: unpack state → call one `core` function → pack
@@ -413,16 +402,18 @@ See [`docs/concepts.md`](docs/concepts.md) for the generated table.
   meta-package, which pulls ~30 provider packages for the same API.
 - **`OpenAIChatCompletionClient`**, not the Responses-API client — Ollama and
   most local servers only implement `/v1/chat/completions`.
-- **`AsyncSqliteSaver`**, not `SqliteSaver`: the sync saver raises on `ainvoke`.
 - **`en_core_web_sm` is not on PyPI** — it installs from a GitHub release wheel
   via the `nlp` extra. Without it the regex PII engine takes over.
-- `adapters/maf/executors.py` deliberately omits `from __future__ import annotations`:
-  `@response_handler` validates the raw `inspect.signature` annotation, so
-  postponed annotations make it reject a valid `WorkflowContext`.
+- **CrewAI is given `provider="openai"` explicitly.** Without it CrewAI infers a
+  provider from the model name, and any name it does not recognise (`qwen2.5:3b`
+  and every other local model) falls through to LiteLLM, which is not a
+  dependency here.
+- **CrewAI telemetry is opted out** before `crewai` is imported. Nothing here
+  should be reporting customer records to a third party.
 
 ## Testing
 
 ```bash
-uv run pytest              # 563 model-free tests
-uv run pytest -m llm       # 38 more, needs an endpoint (skips without one)
+uv run pytest              # 527 model-free tests
+uv run pytest -m llm       # 40 more, needs an endpoint (skips without one)
 ```

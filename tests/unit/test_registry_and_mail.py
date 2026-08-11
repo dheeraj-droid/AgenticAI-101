@@ -226,14 +226,15 @@ def test_send_without_smtp_host_still_does_not_transmit(monkeypatch) -> None:
     assert "SMTP_HOST" in result.reason
 
 
-def test_customer_mail_is_never_transmitted_without_approval(monkeypatch) -> None:
+def test_customer_mail_is_never_transmitted_to_an_unapproved_address(monkeypatch) -> None:
     """The guard that stops a demo run emailing a real person."""
     monkeypatch.setenv("SMTP_HOST", "smtp.invalid")
+    monkeypatch.delenv("ONBOARDING_ALLOWED_RECIPIENTS", raising=False)
     email = WelcomeEmail(subject="Welcome", body="Hello there")
     mail = build_customer_mail(make_record(), email, "run-1")
-    result = deliver(mail, _sink(), allow_send=True, approved=False)
+    result = deliver(mail, _sink(), allow_send=True)
     assert result.sent is False
-    assert "approved" in result.reason
+    assert "ONBOARDING_ALLOWED_RECIPIENTS" in result.reason
 
 
 def test_delivery_is_audited() -> None:

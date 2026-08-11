@@ -1,4 +1,4 @@
-"""Errors shared by the core pipeline and all three framework adapters."""
+"""Errors shared by the core pipeline and all four framework adapters."""
 
 from __future__ import annotations
 
@@ -26,10 +26,6 @@ class LlmNotConfiguredError(OnboardingError):
         )
 
 
-class ResumeNotSupportedError(OnboardingError):
-    """Raised by a stateless adapter when asked to resume a paused run."""
-
-
 class PromptChecksumError(OnboardingError):
     """A prompt file's recorded checksum does not match its content."""
 
@@ -38,5 +34,3 @@ class PromptRenderError(OnboardingError):
     """A prompt was rendered with unknown, missing or unsubstituted variables."""
 
 
-class RunNotFoundError(OnboardingError):
-    """No persisted run exists for the given run_id."""

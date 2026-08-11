@@ -65,9 +65,8 @@ by all four frameworks.
 | AI agent vs LLM application | `langchain` | `onboarding.adapters.lc.agent:build_agent` |
 | Agentic-first vs traditional architecture | `langgraph` | `onboarding.adapters.lg.graph:build_graph` |
 | Agentic-first vs traditional architecture | `maf` | `onboarding.adapters.maf.workflow:build_workflow` |
-| Autonomous vs assistive agents | `core` | `onboarding.core.hitl:build_approval_request` |
 | Autonomous vs assistive agents | `core` | `onboarding.core.risk:assess_risk` |
-| Autonomous vs assistive agents | `core` | `onboarding.core.rules:approval_triggers` |
+| Autonomous vs assistive agents | `core` | `onboarding.core.rules:risk_triggers` |
 | Single-agent vs multi-agent systems | `crew` | `onboarding.adapters.crew.crew:build_crew` |
 | Single-agent vs multi-agent systems | `langchain` | `onboarding.adapters.lc.agent:build_agent` |
 | Stateless vs stateful agents | `langchain` | `onboarding.adapters.lc.agent:build_agent` |
@@ -79,7 +78,7 @@ by all four frameworks.
 | Least-to-most planning | `maf` | `onboarding.adapters.maf.executors:PlanExecutor.plan` |
 | Policy-constrained reasoning | `core` | `onboarding.core.discounts:render_allowlist` |
 | Policy-constrained reasoning | `core` | `onboarding.core.risk:assess_risk` |
-| Policy-constrained reasoning | `core` | `onboarding.core.rules:approval_triggers` |
+| Policy-constrained reasoning | `core` | `onboarding.core.rules:risk_triggers` |
 | Policy-constrained reasoning | `core` | `onboarding.core.steps:act_draft_email` |
 | Policy-constrained reasoning | `core` | `onboarding.core.validation:validate_record` |
 | Workflow decomposition | `core` | `onboarding.core.planning:decompose` |
@@ -89,27 +88,14 @@ by all four frameworks.
 | Workflow decomposition | `langgraph` | `onboarding.adapters.lg.graph:build_graph` |
 | Workflow decomposition | `maf` | `onboarding.adapters.maf.executors:TaskListExecutor.build` |
 | Workflow decomposition | `maf` | `onboarding.adapters.maf.workflow:build_workflow` |
-| Human-in-the-loop checkpoint | `core` | `onboarding.core.hitl:apply_decision` |
-| Human-in-the-loop checkpoint | `core` | `onboarding.core.hitl:build_approval_request` |
-| Human-in-the-loop checkpoint | `core` | `onboarding.core.hitl:record_approval_required` |
-| Human-in-the-loop checkpoint | `core` | `onboarding.core.steps:escalate` |
-| Human-in-the-loop checkpoint | `langgraph` | `onboarding.adapters.lg.nodes:human_approval` |
-| Human-in-the-loop checkpoint | `langgraph` | `onboarding.adapters.lg.nodes:route_after_risk` |
-| Human-in-the-loop checkpoint | `maf` | `onboarding.adapters.maf.executors:ApprovalExecutor.on_decision` |
-| Human-in-the-loop checkpoint | `maf` | `onboarding.adapters.maf.executors:ApprovalExecutor.request_approval` |
-| Human-in-the-loop checkpoint | `maf` | `onboarding.adapters.maf.workflow:needs_approval` |
 | Conditional branching | `langgraph` | `onboarding.adapters.lg.graph:build_graph` |
 | Conditional branching | `langgraph` | `onboarding.adapters.lg.nodes:risk_gate` |
-| Conditional branching | `langgraph` | `onboarding.adapters.lg.nodes:route_after_decision` |
 | Conditional branching | `langgraph` | `onboarding.adapters.lg.nodes:route_after_reflect` |
 | Conditional branching | `langgraph` | `onboarding.adapters.lg.nodes:route_after_risk` |
 | Conditional branching | `maf` | `onboarding.adapters.maf.executors:RiskGateExecutor.gate` |
-| Conditional branching | `maf` | `onboarding.adapters.maf.workflow:approved` |
 | Conditional branching | `maf` | `onboarding.adapters.maf.workflow:build_workflow` |
-| Conditional branching | `maf` | `onboarding.adapters.maf.workflow:has_blocking_errors` |
-| Conditional branching | `maf` | `onboarding.adapters.maf.workflow:needs_approval` |
+| Conditional branching | `maf` | `onboarding.adapters.maf.workflow:must_escalate` |
 | Conditional branching | `maf` | `onboarding.adapters.maf.workflow:needs_repair` |
-| Conditional branching | `maf` | `onboarding.adapters.maf.workflow:rejected` |
 | Conditional branching | `maf` | `onboarding.adapters.maf.workflow:should_escalate` |
 | Query rewriting & expansion | `core` | `onboarding.core.planning:rewrite_query` |
 | Query rewriting & expansion | `core` | `onboarding.core.steps:plan` |
@@ -157,11 +143,7 @@ by all four frameworks.
 | Confidence-threshold fallback | `langgraph` | `onboarding.adapters.lg.nodes:route_after_reflect` |
 | Confidence-threshold fallback | `maf` | `onboarding.adapters.maf.executors:EscalateExecutor.escalate` |
 | Confidence-threshold fallback | `maf` | `onboarding.adapters.maf.workflow:should_escalate` |
-| Durable state & resume | `core` | `onboarding.core.hitl:record_approval_required` |
-| Durable state & resume | `langgraph` | `onboarding.adapters.lg.nodes:human_approval` |
-| Durable state & resume | `maf` | `onboarding.adapters.maf.executors:ApprovalExecutor.request_approval` |
 | Audit logging | `core` | `onboarding.core.audit:JsonlAuditSink.emit` |
-| Audit logging | `core` | `onboarding.core.hitl:record_approval_required` |
 | Audit logging | `core` | `onboarding.core.mailer:deliver` |
 | Audit logging | `core` | `onboarding.core.registry:append_customer` |
 | Audit logging | `core` | `onboarding.core.steps:finalize` |

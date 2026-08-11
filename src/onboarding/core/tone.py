@@ -81,7 +81,7 @@ _STOPWORDS = frozenset(
 def extract_slots(subject: str, body: str, company_name: str) -> dict[str, bool | str]:
     """Structural slots used for cross-framework prose agreement.
 
-    Deliberately coarse: all three frameworks must agree on *these*, not on
+    Deliberately coarse: all four frameworks must agree on *these*, not on
     wording, so the comparison stays stable across models.
     """
     text = f"{subject}\n{body}".lower()

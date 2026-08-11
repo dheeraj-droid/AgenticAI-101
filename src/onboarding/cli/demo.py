@@ -6,8 +6,8 @@ Onboards a customer end to end — validates, masks, drafts the welcome email,
 builds the task list, registers them, writes the mail — then drops straight into
 a conversation about the customer it just processed.
 
-Run it three times, once per framework, and you have watched the same workflow
-in Microsoft Agent Framework, LangChain and LangGraph.
+Run it four times, once per framework, and you have watched the same workflow in
+Microsoft Agent Framework, LangChain, LangGraph and CrewAI.
 """
 
 from __future__ import annotations
@@ -42,12 +42,6 @@ def run_demo(framework: str = "langgraph", record_name: str = "valid_smb") -> No
     )
     _show(result)
 
-    if result.status == "blocked_awaiting_approval":
-        console.print(
-            "[yellow]This record needs human approval before anything is sent, so no email "
-            "was drafted.[/] Try a record that clears the gate, e.g. "
-            "[bold]--record valid_smb[/].\n"
-        )
 
     _chat(framework, record)
 

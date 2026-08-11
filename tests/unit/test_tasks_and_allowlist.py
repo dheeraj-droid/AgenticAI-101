@@ -163,7 +163,6 @@ def test_customer_mail_to_an_unapproved_address_is_never_transmitted(monkeypatch
         build_already_registered_mail(make_record(email="typo@stranger.com"), "r"),
         sink,
         allow_send=True,
-        approved=True,
     )
 
     assert result.sent is False

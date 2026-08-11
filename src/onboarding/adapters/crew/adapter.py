@@ -10,8 +10,8 @@ Where this sits in the comparison:
   branching: unlike MAF and LangGraph, a crew cannot route a record down a
   different path. Every conditional in this adapter is plain Python around the
   crew, which is honest about what the framework actually provides.
-* **Stateless.** ``memory=False``, no checkpointer. Like LangChain, it can pause
-  for approval but cannot be resumed.
+* **Stateless.** ``memory=False``: nothing carries between runs, so two
+  submissions of the same record behave identically.
 
 Everything outside the drafting step is the same ``core.steps`` pipeline the
 other three call, so any difference in the deterministic output is a real
@@ -30,11 +30,8 @@ from onboarding.core import steps
 from onboarding.core.audit import default_sink
 from onboarding.core.concepts import Concept, concept
 from onboarding.core.config import paths
-from onboarding.core.errors import ResumeNotSupportedError
-from onboarding.core.hitl import ResumeIndex, record_approval_required
 from onboarding.core.rules import Capabilities
 from onboarding.core.schemas import (
-    ApprovalDecision,
     CustomerRecord,
     Framework,
     OnboardingResult,
@@ -44,18 +41,14 @@ from onboarding.core.schemas import (
 
 
 class CrewAdapter:
-    """Two agents, one sequential process, no durable state."""
+    """Two agents, one sequential process."""
 
     name: ClassVar[Framework] = "crew"
     capabilities: ClassVar[Capabilities] = Capabilities(
         multi_step=True,
         conditional_branching=False,
-        hitl_pause=True,
-        durable_resume=False,
         tools=True,
         agent_count="multi",
-        statefulness="stateless",
-        checkpoint_backend="none (memory=False)",
         notes=(
             "The only multi-agent adapter: a copywriter drafts and a separate compliance "
             "reviewer checks, each with its own context window. The order is fixed at "
@@ -68,7 +61,7 @@ class CrewAdapter:
     def __init__(self, *, allow_send: bool = False) -> None:
         self.allow_send = allow_send
 
-    @concept(Concept.SINGLE_VS_MULTI_AGENT, Concept.STATELESS_VS_STATEFUL, Concept.AGENT_VS_LLM_APP)
+    @concept(Concept.SINGLE_VS_MULTI_AGENT, Concept.AGENT_VS_LLM_APP)
     async def run(
         self, record: CustomerRecord, *, run_id: str, record_path: str | None = None
     ) -> OnboardingResult:
@@ -79,13 +72,9 @@ class CrewAdapter:
 
         state = steps.plan(steps.perceive(state, sink), sink)
 
-        if state.has_blocking_errors():
+        if state.must_escalate():
             state = steps.escalate(state, sink)
             state = steps.notify_already_registered(state, sink, allow_send=self.allow_send)
-            return steps.finalize(state, sink)
-
-        if state.requires_human_approval():
-            record_approval_required(state, sink, record_path=record_path, index=ResumeIndex())
             return steps.finalize(state, sink)
 
         state = await self._draft_with_crew(state, sink)
@@ -143,14 +132,6 @@ class CrewAdapter:
             crew_agents=2,
         )
         return state
-
-    @concept(Concept.STATELESS_VS_STATEFUL)
-    async def resume(self, run_id: str, decision: ApprovalDecision) -> OnboardingResult:
-        raise ResumeNotSupportedError(
-            f"the CrewAI adapter runs with memory=False, so run {run_id!r} cannot be resumed: "
-            "a crew kickoff is a single call with no checkpoint to return to. Re-run the "
-            "record from the start, or use --framework maf|langgraph, which persist state."
-        )
 
 
 def _extract_draft(output: Any) -> EmailDraft:

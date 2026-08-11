@@ -1,15 +1,16 @@
 """Risk assessment — decides autonomous vs assistive handling.
 
-This is the routing predicate shared verbatim by the MAF switch-case group and
-the LangGraph conditional edge. ``test_branch_parity`` asserts both graphs route
-on *this* function, so the two can never drift apart.
+The score produced here drives the planning strategy and the confidence floor.
+It is deliberately *not* the stop/go decision: whether a record can be onboarded
+at all is the narrower question ``OnboardingState.must_escalate`` answers, and
+both graphs route on that one predicate so they cannot drift apart.
 """
 
 from __future__ import annotations
 
 from onboarding.core.concepts import Concept, concept
 from onboarding.core.injection import has_blocking_signal
-from onboarding.core.rules import approval_triggers
+from onboarding.core.rules import risk_triggers
 from onboarding.core.schemas import (
     CustomerRecord,
     Finding,
@@ -29,12 +30,12 @@ def assess_risk(
     findings: list[Finding],
     injection_signals: list[InjectionSignal],
 ) -> RiskAssessment:
-    """Score the record and decide whether a human must sign off."""
+    """Score the record so planning and the confidence threshold can use it."""
     blocking_injection = has_blocking_signal(injection_signals)
     errors = has_errors(findings)
     warnings = has_warnings(findings)
 
-    triggers = approval_triggers(
+    triggers = risk_triggers(
         tier=record.tier,
         annual_contract_value_usd=record.commercial_terms.annual_contract_value_usd,
         has_injection_block=blocking_injection,
@@ -53,5 +54,4 @@ def assess_risk(
         score=round(score, 3),
         band=band,  # type: ignore[arg-type]
         reasons=[t.reason for t in triggers],
-        requires_human_approval=bool(triggers),
     )

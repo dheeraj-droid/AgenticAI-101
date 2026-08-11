@@ -1,7 +1,7 @@
 """Confidence scoring and the threshold fallback to a human queue.
 
 Below ``RULES.MIN_CONFIDENCE`` we do not ship the draft: the run is escalated
-instead. Same function in all three frameworks.
+instead. Same function in all four frameworks.
 """
 
 from __future__ import annotations

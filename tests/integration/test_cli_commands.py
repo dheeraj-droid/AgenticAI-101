@@ -100,10 +100,6 @@ def test_concepts_lists_the_bindings() -> None:
     assert "PERCEPTION" in invoke("concepts").upper()
 
 
-def test_pending_on_an_empty_queue() -> None:
-    invoke("pending")
-
-
 def test_outbox_on_an_empty_outbox() -> None:
     invoke("outbox")
 

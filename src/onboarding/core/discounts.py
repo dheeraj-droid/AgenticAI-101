@@ -10,7 +10,7 @@ Defense in depth, three layers:
 3. **Corrective** — ``redact`` deletes offending sentences outright.
 
 Layer 2 is the one that actually counts: the guarantee is enforced by a
-validator that runs on all three frameworks' output identically, not by asking a
+validator that runs on all four frameworks' output identically, not by asking a
 model nicely. ``validate(redact(text, claims), terms) == []`` is asserted in the
 tests, so an undeclared discount cannot reach a customer.
 """

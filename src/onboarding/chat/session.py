@@ -1,11 +1,11 @@
-"""One chat interface, three framework implementations.
+"""One chat interface, four framework implementations.
 
 Same system prompt, same read-only tools — only the orchestration differs, which
 is the whole point of the comparison:
 
 * **LangChain** — a single ``create_agent`` loop. Conversational by nature.
 * **LangGraph** — a two-node graph (``agent`` ↔ ``tools``) with a message
-  channel and a real checkpointer, so the conversation survives the process.
+  channel, so the tool loop is an explicit cycle rather than an implicit one.
 * **MAF** — an ``Agent`` over ``OpenAIChatCompletionClient`` with the same tools
   attached, driven turn by turn.
 * **CrewAI** — a single ``Agent`` in a one-task crew per question. A crew is
@@ -92,7 +92,7 @@ class LangChainChat:
 
 
 # ---------------------------------------------------------------------------
-# LangGraph — an explicit agent/tools loop with durable history
+# LangGraph — an explicit agent/tools loop
 # ---------------------------------------------------------------------------
 
 

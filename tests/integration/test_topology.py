@@ -5,8 +5,6 @@ None of these tests calls a model — building a graph must never require one.
 
 from __future__ import annotations
 
-import pytest
-
 from onboarding.adapters.base import FRAMEWORKS, get_adapter
 from onboarding.adapters.lg.graph import CONDITIONAL_BRANCH_POINTS, build_graph
 from onboarding.adapters.maf.workflow import EXECUTOR_IDS, build_workflow
@@ -46,7 +44,7 @@ def test_langgraph_compiles() -> None:
     compiled = build_graph().compile()
     nodes = set(compiled.get_graph().nodes)
     expected = {
-        "ingest", "plan", "rewrite_query", "risk_gate", "human_approval",
+        "ingest", "plan", "rewrite_query", "risk_gate",
         "draft_email", "build_tasks", "reflect", "repair", "escalate", "finalize",
     }
     assert expected <= nodes
@@ -155,21 +153,15 @@ def test_both_graphs_route_on_the_same_core_predicates() -> None:
     from onboarding.adapters.lg import nodes as lg_nodes
     from onboarding.adapters.maf import workflow as maf_workflow
 
-    for name, needs_approval, blocking in [
+    for name, blocking, injection in [
         ("clean", False, False),
-        ("approval", True, False),
-        ("blocked", False, True),
+        ("blocked", True, False),
+        ("poisoned", False, True),
         ("both", True, True),
     ]:
-        payload = _state_payload(needs_approval=needs_approval, blocking=blocking)
+        payload = _state_payload(blocking=blocking, injection=injection)
 
-        maf_choice = (
-            "escalate"
-            if maf_workflow.has_blocking_errors(payload)
-            else "approve_needed"
-            if maf_workflow.needs_approval(payload)
-            else "draft"
-        )
+        maf_choice = "escalate" if maf_workflow.must_escalate(payload) else "draft"
         assert lg_nodes.route_after_risk(_graph_payload(payload)) == maf_choice, (
             f"the two graphs disagree on routing for the {name!r} case"
         )
@@ -193,7 +185,7 @@ def test_both_graphs_share_the_reflection_predicates() -> None:
     assert lg_nodes.route_after_reflect(_graph_payload(payload)) == "repair"
 
 
-def _state_payload(*, needs_approval: bool = False, blocking: bool = False) -> dict:
+def _state_payload(*, blocking: bool = False, injection: bool = False) -> dict:
     """A minimal serialised state with the requested routing characteristics."""
     from datetime import date
     from decimal import Decimal
@@ -203,6 +195,7 @@ def _state_payload(*, needs_approval: bool = False, blocking: bool = False) -> d
         Contact,
         CustomerRecord,
         Finding,
+        InjectionSignal,
         OnboardingState,
         Perception,
         RiskAssessment,
@@ -226,9 +219,21 @@ def _state_payload(*, needs_approval: bool = False, blocking: bool = False) -> d
         if blocking
         else []
     )
+    signals = (
+        [
+            InjectionSignal(
+                pattern_id="IGNORE_PREVIOUS",
+                matched_span="ignore previous",
+                field_path="signup_notes",
+                severity="block",
+            )
+        ]
+        if injection
+        else []
+    )
     state = OnboardingState(run_id="r1", framework="maf", record=record)
-    state.perception = Perception(findings=findings)
-    state.risk = RiskAssessment(requires_human_approval=needs_approval)
+    state.perception = Perception(findings=findings, injection_signals=signals)
+    state.risk = RiskAssessment()
     return state.model_dump(mode="json")
 
 
@@ -240,18 +245,12 @@ def _graph_payload(state_payload: dict) -> dict:
 # --- capabilities ----------------------------------------------------------
 
 
-def test_every_adapter_declares_capabilities() -> None:
+
+
+def test_every_adapter_declares_what_it_is() -> None:
     for framework in FRAMEWORKS:
         caps = get_adapter(framework).capabilities
-        assert caps.checkpoint_backend and caps.notes
-
-
-def test_only_the_graph_frameworks_can_resume() -> None:
-    """The comparison's headline claim, asserted rather than merely documented."""
-    assert get_adapter("maf").capabilities.durable_resume is True
-    assert get_adapter("langgraph").capabilities.durable_resume is True
-    assert get_adapter("langchain").capabilities.durable_resume is False
-    assert get_adapter("crew").capabilities.durable_resume is False
+        assert caps.notes and caps.agent_count
 
 
 def test_only_the_crew_runs_more_than_one_agent_identity() -> None:
@@ -266,14 +265,3 @@ def test_only_the_crew_runs_more_than_one_agent_identity() -> None:
     assert [f for f, n in declared.items() if n] == ["crew"]
 
 
-def test_the_stateless_adapters_say_so_when_asked_to_resume() -> None:
-    """A refusal that explains itself, rather than a silent no-op."""
-    import asyncio
-
-    from onboarding.core.errors import ResumeNotSupportedError
-    from onboarding.core.schemas import ApprovalDecision
-
-    for framework in ("langchain", "crew"):
-        with pytest.raises(ResumeNotSupportedError) as caught:
-            asyncio.run(get_adapter(framework).resume("r1", ApprovalDecision(decision="approve")))
-        assert "maf|langgraph" in str(caught.value)

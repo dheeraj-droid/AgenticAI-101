@@ -9,11 +9,10 @@ requires all of:
 
 * ``SMTP_HOST`` configured, and
 * ``allow_send=True`` (the CLI's ``--send`` flag), and
-* for the customer-facing message only, a record that has cleared the human
-  approval gate.
+* for the customer-facing message only, a recipient on the allowlist.
 
-That last condition is the important one: the fixtures contain realistic-looking
-addresses, and a demo run must not be able to email a real person.
+That last condition is the important one: a form takes whatever address is typed
+into it, and a demo run must not be able to email a real stranger.
 """
 
 from __future__ import annotations
@@ -222,7 +221,6 @@ def deliver(
     sink: JsonlAuditSink | None = None,
     *,
     allow_send: bool = False,
-    approved: bool = False,
 ) -> DeliveryResult:
     """Write the message to the outbox, and transmit it only if truly permitted."""
     directory = outbox_dir()
@@ -237,8 +235,6 @@ def deliver(
         reason = "written to the outbox; pass --send to transmit"
     elif not host:
         reason = "SMTP_HOST is not set, so nothing was transmitted"
-    elif mail.audience == "customer" and not approved:
-        reason = "customer mail requires an approved record; not transmitted"
     elif mail.audience == "customer" and not is_allowed(mail.to):
         reason = (
             f"{mail.to} is not on ONBOARDING_ALLOWED_RECIPIENTS, so nothing was sent. "

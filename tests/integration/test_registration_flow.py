@@ -66,9 +66,8 @@ def test_registration_is_idempotent(valid_record) -> None:
 @pytest.mark.parametrize(
     ("field", "value", "why"),
     [
-        ("status", "blocked_awaiting_approval", "waiting on a human"),
-        ("status", "rejected", "a human said no"),
         ("status", "escalated", "escalated"),
+        ("status", "failed", "failed"),
     ],
 )
 def test_unfinished_runs_never_register(valid_record, field, value, why) -> None:
@@ -90,17 +89,35 @@ def test_a_failed_reflection_never_registers(valid_record) -> None:
     assert read_all() == []
 
 
-def test_an_unapproved_high_risk_run_never_registers(enterprise_record) -> None:
+def test_a_high_risk_run_still_registers(enterprise_record) -> None:
+    """Risk shapes the plan and the confidence floor; it is not a veto by itself."""
     state = _ready_state(enterprise_record)
-    assert state.requires_human_approval()
-    steps.register_customer(state, _sink(state))
-    assert read_all() == []
-
-
-def test_an_approved_high_risk_run_does_register(enterprise_record) -> None:
-    state = _ready_state(enterprise_record, approval_decision="approve")
+    assert state.risk is not None and state.risk.band == "high"
     steps.register_customer(state, _sink(state))
     assert len(read_all()) == 1
+
+
+def test_a_record_carrying_an_injection_never_registers(valid_record) -> None:
+    """The one thing risk *does* veto: poisoned text must not become a customer."""
+    from onboarding.core.schemas import InjectionSignal, Perception
+
+    state = _ready_state(valid_record)
+    assert state.perception is not None
+    state.perception = state.perception.model_copy(
+        update={
+            "injection_signals": [
+                InjectionSignal(
+                    pattern_id="IGNORE_PREVIOUS",
+                    matched_span="ignore previous",
+                    field_path="signup_notes",
+                    severity="block",
+                )
+            ]
+        }
+    )
+    assert isinstance(state.perception, Perception) and state.must_escalate()
+    steps.register_customer(state, _sink(state))
+    assert read_all() == []
 
 
 def test_no_mail_without_registration(valid_record) -> None:
@@ -129,8 +146,12 @@ async def test_a_second_run_of_the_same_record_is_blocked(valid_record, record_p
     assert len(read_all()) == 1, "the duplicate was written to the registry"
 
 
-async def test_a_same_company_signup_goes_to_a_human(valid_record, record_path) -> None:
-    """A suspected duplicate is a judgement call, so it routes to approval."""
+def test_a_same_company_signup_is_flagged_but_does_not_stop_the_run(valid_record) -> None:
+    """A second team at the same company is legitimate, so it is a warning only.
+
+    Checked at the gate rather than end to end: a run that is *not* stopped goes
+    on to drafting, which needs a model.
+    """
     other = valid_record.model_copy(
         update={
             "record_id": "OTHER-1",
@@ -141,15 +162,12 @@ async def test_a_same_company_signup_goes_to_a_human(valid_record, record_path) 
         }
     )
     append_customer(other, run_id="earlier")
-    adapter = get_adapter("langgraph")
-    result = await adapter.run(
-        valid_record,
-        run_id=new_run_id(valid_record.record_id, "langgraph"),
-        record_path=str(record_path("valid_smb")),
-    )
-    assert "POSSIBLE_DUPLICATE" in {f.code for f in result.findings}
-    assert result.status == "blocked_awaiting_approval"
-    assert result.registered is False
+
+    state = steps.new_state(valid_record, "r1", "langgraph")
+    state = steps.perceive(state, _sink(state))
+
+    assert "POSSIBLE_DUPLICATE" in {f.code for f in state.perception.findings}
+    assert state.must_escalate() is False, "a warning must not stop the run"
 
 
 @pytest.mark.parametrize("framework", FRAMEWORKS)

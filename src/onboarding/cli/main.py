@@ -4,8 +4,6 @@
     onboarding demo --framework crew     # the same thing in the terminal
     onboarding doctor
     onboarding run --framework lg --record fixtures/customers/valid_smb.json
-    onboarding resume --run-id <id> --decision approve
-    onboarding pending
     onboarding compare
     onboarding concepts --framework maf
     onboarding prompts verify
@@ -27,8 +25,7 @@ from onboarding.adapters.base import FRAMEWORKS, get_adapter, load_record
 from onboarding.core.audit import JsonlAuditSink, new_run_id
 from onboarding.core.config import llm_spec, paths
 from onboarding.core.errors import OnboardingError
-from onboarding.core.hitl import ResumeIndex
-from onboarding.core.schemas import ApprovalDecision, OnboardingResult
+from onboarding.core.schemas import OnboardingResult
 
 app = typer.Typer(
     help="Customer Onboarding Assistant — one core, four frameworks.",
@@ -135,7 +132,7 @@ def doctor() -> None:
     for framework in FRAMEWORKS:
         try:
             adapter = get_adapter(framework)
-            table.add_row(f"Adapter: {framework}", "[green]ok[/]", adapter.capabilities.checkpoint_backend)
+            table.add_row(f"Adapter: {framework}", "[green]ok[/]", adapter.capabilities.notes[:60])
         except Exception as exc:
             table.add_row(f"Adapter: {framework}", "[red]failed[/]", str(exc)[:90])
 
@@ -152,7 +149,7 @@ def doctor() -> None:
 
 
 # ---------------------------------------------------------------------------
-# run / resume
+# run
 # ---------------------------------------------------------------------------
 
 
@@ -177,64 +174,6 @@ def run(
         console.print_json(result.model_dump_json())
     else:
         _print_result(result)
-
-
-@app.command()
-def resume(
-    run_id: Annotated[str, typer.Option("--run-id", help="The run_id printed when the run blocked")],
-    decision: Annotated[str, typer.Option("--decision", help="approve | reject")] = "approve",
-    by: Annotated[str, typer.Option("--by", help="Who is making the decision")] = "cli",
-    note: Annotated[str, typer.Option("--note", help="Optional note recorded in the audit log")] = "",
-) -> None:
-    """Resume a run that paused at the human-approval checkpoint."""
-    if decision not in ("approve", "reject"):
-        console.print("[red]--decision must be 'approve' or 'reject'[/]")
-        raise typer.Exit(code=2)
-
-    entry = ResumeIndex().get(run_id)
-    adapter = get_adapter(entry.framework)
-    try:
-        result = asyncio.run(
-            adapter.resume(
-                run_id,
-                ApprovalDecision(decision=decision, decided_by=by, note=note),  # type: ignore[arg-type]
-            )
-        )
-    except OnboardingError as exc:
-        console.print(f"[red]{type(exc).__name__}[/]: {exc}")
-        raise typer.Exit(code=1) from exc
-    _print_result(result)
-
-
-@app.command()
-def pending() -> None:
-    """List runs waiting on a human decision."""
-    entries = [e for e in ResumeIndex().list() if e.status == "blocked_awaiting_approval"]
-    if not entries:
-        console.print("No runs are waiting for approval.")
-        return
-    table = Table(title="Awaiting human approval")
-    table.add_column("run_id")
-    table.add_column("framework")
-    table.add_column("company")
-    table.add_column("reasons")
-    table.add_column("resumable")
-    for entry in entries:
-        request = entry.approval_request
-        resumable = "[green]yes[/]" if entry.framework != "langchain" else "[red]no (stateless)[/]"
-        table.add_row(
-            entry.run_id,
-            entry.framework,
-            request.company_name if request else entry.record_id,
-            "; ".join(request.reasons) if request else "—",
-            resumable,
-        )
-    console.print(table)
-
-
-# ---------------------------------------------------------------------------
-# compare
-# ---------------------------------------------------------------------------
 
 
 @app.command()
@@ -567,7 +506,6 @@ def outbox(
 def _print_result(result: OnboardingResult) -> None:
     colour = {
         "completed": "green",
-        "blocked_awaiting_approval": "yellow",
         "rejected": "red",
         "escalated": "yellow",
         "failed": "red",
@@ -580,7 +518,7 @@ def _print_result(result: OnboardingResult) -> None:
     table.add_row("run_id", result.run_id)
     table.add_row("risk", f"{result.risk.band} ({result.risk.score})")
     if result.risk.reasons:
-        table.add_row("approval reasons", "\n".join(result.risk.reasons))
+        table.add_row("risk reasons", "\n".join(result.risk.reasons))
     table.add_row("findings", ", ".join(f.code for f in result.findings) or "—")
     table.add_row("PII masked", ", ".join(result.pii_entity_types) or "—")
     if result.injection_signals:
@@ -599,25 +537,12 @@ def _print_result(result: OnboardingResult) -> None:
         )
     if result.escalation_queue:
         table.add_row("escalation", "\n".join(result.escalation_queue))
-    table.add_row("resume", result.resume_token or "[red]not resumable[/]")
     console.print(table)
 
     if result.welcome_email:
         console.print(f"\n[bold]Subject:[/] {result.welcome_email.subject}\n")
         console.print(result.welcome_email.body)
 
-    if result.status == "blocked_awaiting_approval":
-        if result.resume_supported:
-            # Show the syntax for wherever the user actually is.
-            console.print(
-                "\n[yellow]Waiting for a human.[/] Resume with:\n"
-                f"  onboarding resume --run-id {result.run_id} --decision approve"
-            )
-        else:
-            console.print(
-                "\n[yellow]Waiting for a human.[/] This adapter is stateless and cannot be "
-                "resumed — re-run the record after approval."
-            )
 
 
 if __name__ == "__main__":

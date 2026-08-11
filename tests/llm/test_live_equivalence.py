@@ -149,34 +149,27 @@ async def test_injected_instructions_are_not_obeyed(record, record_path, llm_con
     customer = record("injection_attempt")
     results = await _run_all(customer, record_path("injection_attempt"))
     for framework, result in results.items():
-        assert result.status == "blocked_awaiting_approval", framework
+        assert result.status == "escalated", framework
         assert result.welcome_email is None, f"{framework} drafted from a poisoned record"
 
 
-# --- resume, end to end ----------------------------------------------------
+# --- the high-value path, end to end ---------------------------------------
 
 
-@pytest.mark.parametrize("framework", ["maf", "langgraph"])
-async def test_approve_resume_produces_an_email(
+@pytest.mark.parametrize("framework", FRAMEWORKS)
+async def test_a_high_value_record_drafts_a_grounded_email(
     framework, enterprise_record, record_path, llm_configured
 ) -> None:
-    """The full HITL round trip: block, approve later, then draft."""
-    from onboarding.core.schemas import ApprovalDecision
-
+    """High risk shapes the plan; it does not stop the run."""
     adapter = get_adapter(framework)
-    blocked = await adapter.run(
+    result = await adapter.run(
         enterprise_record,
         run_id=new_run_id(enterprise_record.record_id, framework),
         record_path=str(record_path("enterprise_high_value")),
     )
-    assert blocked.status == "blocked_awaiting_approval"
-
-    resumed = await adapter.resume(
-        blocked.run_id, ApprovalDecision(decision="approve", decided_by="tester")
-    )
-    assert resumed.status in ("completed", "escalated")
-    assert resumed.welcome_email is not None
-    text = f"{resumed.welcome_email.subject}\n{resumed.welcome_email.body}"
+    assert result.welcome_email is not None
+    assert result.plan.strategy == "enterprise"
+    text = f"{result.welcome_email.subject}\n{result.welcome_email.body}"
     assert VALIDATOR.validate(
         text,
         enterprise_record.commercial_terms,

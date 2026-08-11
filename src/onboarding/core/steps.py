@@ -145,9 +145,9 @@ def check_already_registered(record: CustomerRecord, sink: JsonlAuditSink) -> li
 
     Expressed as findings rather than as a new branch, so it rides the routing
     that already exists: an exact hit is a blocking error and escalates, while a
-    same-company suspicion is a warning, which the approval rules already treat
-    as needing a human. A second team at the same company is a real thing to
-    onboard — that call belongs to a person, not to a regex.
+    same-company suspicion is only a warning, so that record still onboards. A
+    second team at the same company is a legitimate thing to onboard, and the
+    warning is there to be visible in the report rather than to stop the run.
     """
     match = find_duplicate(record)
     sink.emit("duplicate_checked", kind=match.kind, detail=match.detail)
@@ -211,7 +211,6 @@ def plan(state: OnboardingState, sink: JsonlAuditSink) -> OnboardingState:
         "risk_assessed",
         band=risk.band,
         score=risk.score,
-        requires_human_approval=risk.requires_human_approval,
         reasons=risk.reasons,
     )
 
@@ -397,7 +396,7 @@ def _parse_llm_tasks(reply: dict[str, Any], existing: set[str], limit: int) -> l
 def review_output(state: OnboardingState) -> list[RuleViolation]:
     """Run every output validator against the current draft.
 
-    Identical for all three frameworks — this is where "no fabricated discounts",
+    Identical for all four frameworks — this is where "no fabricated discounts",
     tone and PII-leak enforcement actually happens, regardless of what any agent
     claims about its own output.
     """
@@ -529,12 +528,12 @@ async def repair_email(
     return state
 
 
-@concept(Concept.CONFIDENCE_FALLBACK, Concept.HUMAN_IN_THE_LOOP)
+@concept(Concept.CONFIDENCE_FALLBACK)
 def escalate(state: OnboardingState, sink: JsonlAuditSink, extra_reason: str = "") -> OnboardingState:
-    """Route to the human review queue instead of shipping."""
+    """Stop the run and record why, instead of shipping."""
     reflection = state.reflection
-    # Only judge confidence if a draft was actually produced. A run rejected at
-    # the approval gate never reached reflection, and reporting "confidence 0.0"
+    # Only judge confidence if a draft was actually produced. A run stopped
+    # before drafting never reached reflection, and reporting "confidence 0.0"
     # there would be noise, not a reason.
     reasons = (
         escalation_reasons(reflection.confidence, reflection.violations) if reflection else []
@@ -542,14 +541,15 @@ def escalate(state: OnboardingState, sink: JsonlAuditSink, extra_reason: str = "
     perception = state.perception
     if perception and has_errors(perception.findings):
         reasons.append("the record has blocking validation errors and cannot be onboarded as-is")
+    if state.has_blocking_injection():
+        reasons.append("a prompt-injection attempt was detected, so nothing was drafted")
     if extra_reason:
         reasons.append(extra_reason)
     if not reasons:
         reasons.append("escalated by workflow policy")
 
     state.escalation_queue.extend(reasons)
-    if state.status not in ("blocked_awaiting_approval", "rejected"):
-        state.status = "escalated"
+    state.status = "escalated"
     sink.emit("escalated", reasons=reasons, status=state.status)
     return state
 
@@ -568,7 +568,7 @@ def notify_already_registered(
     if not state.is_duplicate():
         return state
     mail = build_already_registered_mail(state.record, state.run_id)
-    result = deliver(mail, sink, allow_send=allow_send, approved=True)
+    result = deliver(mail, sink, allow_send=allow_send)
     if result.path and str(result.path) not in state.mail_outbox:
         state.mail_outbox.append(str(result.path))
     return state
@@ -588,12 +588,10 @@ def _not_registerable(state: OnboardingState) -> str:
     """
     if state.status != "completed":
         return f"the run status is {state.status}"
-    if state.has_blocking_errors():
-        return "the record has blocking validation errors"
+    if state.must_escalate():
+        return "the record cannot be onboarded as-is"
     if state.reflection is not None and not state.reflection.passed:
         return "the draft did not pass reflection"
-    if state.requires_human_approval() and state.approval_decision != "approve":
-        return "the run still needs human approval"
     if state.escalation_queue:
         return "the run was escalated"
     return ""
@@ -636,11 +634,11 @@ def register_customer(state: OnboardingState, sink: JsonlAuditSink) -> Onboardin
 def send_notifications(
     state: OnboardingState, sink: JsonlAuditSink, *, allow_send: bool = False
 ) -> OnboardingState:
-    """Mail the team, and the customer if there is an approved draft to send.
+    """Mail the team, and the customer if a draft was produced.
 
     Both messages always land in the outbox. Transmission additionally needs
-    SMTP configured and ``--send``; the customer message needs the record to
-    have cleared approval on top of that.
+    SMTP configured, ``--send``, and — for the customer-facing message — an
+    allowlisted recipient.
     """
     if not state.registered:
         if state.is_duplicate():
@@ -649,12 +647,11 @@ def send_notifications(
         return state
 
     team = build_team_mail(state.record, state.tasks, state.run_id, registered=state.registered)
-    results = [deliver(team, sink, allow_send=allow_send, approved=True)]
+    results = [deliver(team, sink, allow_send=allow_send)]
 
     if state.email is not None:
-        approved = state.approval_decision == "approve" or not state.requires_human_approval()
         customer = build_customer_mail(state.record, state.email, state.run_id)
-        results.append(deliver(customer, sink, allow_send=allow_send, approved=approved))
+        results.append(deliver(customer, sink, allow_send=allow_send))
     else:
         sink.emit("mail_skipped", reason="no welcome email was drafted for the customer")
 
@@ -663,8 +660,8 @@ def send_notifications(
 
 
 @concept(Concept.AUDIT_LOGGING)
-def finalize(state: OnboardingState, sink: JsonlAuditSink, *, resume_token: str | None = None) -> OnboardingResult:
-    """Assemble the shared output schema. All three adapters end here."""
+def finalize(state: OnboardingState, sink: JsonlAuditSink) -> OnboardingResult:
+    """Assemble the shared output schema. All four adapters end here."""
     perception = state.perception
     reflection = state.reflection
     started = state.started_at or datetime.now(UTC)
@@ -694,8 +691,6 @@ def finalize(state: OnboardingState, sink: JsonlAuditSink, *, resume_token: str 
         prompt_refs=list(state.prompt_refs),
         audit_log_path=str(sink.path),
         audit_event_ids=list(state.audit_event_ids) + list(sink.event_ids),
-        resume_supported=resume_token is not None,
-        resume_token=resume_token,
         started_at=started,
         finished_at=finished,
         duration_ms=int((finished - started).total_seconds() * 1000),

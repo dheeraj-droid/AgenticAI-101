@@ -76,10 +76,10 @@ def test_go_live_too_soon_is_a_warning() -> None:
 # --- risk ------------------------------------------------------------------
 
 
-def test_enterprise_tier_always_needs_approval() -> None:
+def test_enterprise_tier_is_always_high_risk() -> None:
     record = make_record(tier="enterprise")
     risk = assess_risk(record, [], [])
-    assert risk.requires_human_approval and risk.tier_risk
+    assert risk.tier_risk and risk.band != "low"
 
 
 @pytest.mark.parametrize(
@@ -101,18 +101,18 @@ def test_high_value_threshold_boundary(value: Decimal, expected: bool) -> None:
     assert assess_risk(record, [], []).value_risk is expected
 
 
-def test_injection_forces_approval() -> None:
+def test_injection_is_scored_as_risk() -> None:
     signal = InjectionSignal(
         pattern_id="IGNORE_PREVIOUS", matched_span="ignore previous", field_path="signup_notes", severity="block"
     )
     risk = assess_risk(make_record(), [], [signal])
-    assert risk.requires_human_approval and risk.injection_risk
+    assert risk.injection_risk and risk.band != "low"
 
 
 def test_low_risk_record_runs_autonomously(valid_record) -> None:
     risk = assess_risk(valid_record, validate_record(valid_record), [])
-    assert not risk.requires_human_approval
     assert risk.band == "low"
+    assert not risk.reasons
 
 
 # --- confidence ------------------------------------------------------------
@@ -157,11 +157,11 @@ def test_blocking_errors_switch_to_the_remediation_track(invalid_record) -> None
     assert not any("welcome email" in s.goal.lower() for s in plan.steps)
 
 
-def test_enterprise_plan_inserts_the_approval_step(enterprise_record) -> None:
+def test_enterprise_plan_adds_an_extra_grounding_step(enterprise_record) -> None:
     risk = assess_risk(enterprise_record, [], [])
     plan = decompose(enterprise_record, risk, [])
     assert plan.strategy == "enterprise"
-    assert any("human approval" in s.goal.lower() for s in plan.steps)
+    assert any("commercial terms" in s.goal.lower() for s in plan.steps)
 
 
 def test_query_rewrite_expands_context(valid_record) -> None:
@@ -192,12 +192,6 @@ def test_eu_region_adds_gdpr_tasks(enterprise_record) -> None:
     findings = validate_record(enterprise_record)
     ids = {t.task_id for t in derive_tasks(enterprise_record, findings, assess_risk(enterprise_record, findings, []))}
     assert {"gdpr-dpa", "set-eu-residency"} <= ids
-
-
-def test_approval_task_added_when_human_needed(enterprise_record) -> None:
-    findings = validate_record(enterprise_record)
-    risk = assess_risk(enterprise_record, findings, [])
-    assert "obtain-human-approval" in {t.task_id for t in derive_tasks(enterprise_record, findings, risk)}
 
 
 # --- chunking --------------------------------------------------------------

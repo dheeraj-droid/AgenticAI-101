@@ -1,21 +1,19 @@
 """The Microsoft Agent Framework onboarding workflow.
 
-Two switch-case edge groups plus two conditional edges give the same four
-decision points as the LangGraph implementation:
+Two switch-case edge groups give the same two decision points as the LangGraph
+implementation:
 
-1. ``risk_gate``  — switch-case: needs approval / blocking errors / default
-2. ``approval``   — conditional edges on the human's decision
-3. ``reflect``    — switch-case: repair / escalate / finalize
+1. ``risk_gate`` — switch-case: a record that cannot be onboarded / default
+2. ``reflect``   — switch-case: repair / escalate / finalize
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from agent_framework import Case, CheckpointStorage, Default, Workflow, WorkflowBuilder
+from agent_framework import Case, Default, Workflow, WorkflowBuilder
 
 from onboarding.adapters.maf.executors import (
-    ApprovalExecutor,
     DeliverExecutor,
     DraftEmailExecutor,
     EscalateExecutor,
@@ -31,21 +29,12 @@ from onboarding.core import steps
 from onboarding.core.concepts import Concept, concept
 from onboarding.core.schemas import OnboardingState
 
-# FileCheckpointStorage will only deserialise types on this allow-list.
-ALLOWED_CHECKPOINT_TYPES: list[str] = [
-    "onboarding.core.schemas:OnboardingState",
-    "onboarding.core.schemas:ApprovalRequest",
-    "onboarding.core.schemas:ApprovalDecision",
-    "onboarding.core.schemas:OnboardingResult",
-]
-
 WORKFLOW_NAME = "customer_onboarding"
 
 EXECUTOR_IDS = (
     "ingest",
     "plan",
     "risk_gate",
-    "approval",
     "draft_email",
     "task_list",
     "reflect",
@@ -64,24 +53,9 @@ def _state(payload: Any) -> OnboardingState:
 # --- routing predicates: the same core functions LangGraph routes on --------
 
 
-@concept(Concept.CONDITIONAL_BRANCHING, Concept.HUMAN_IN_THE_LOOP)
-def needs_approval(payload: Any) -> bool:
-    return _state(payload).requires_human_approval()
-
-
 @concept(Concept.CONDITIONAL_BRANCHING)
-def has_blocking_errors(payload: Any) -> bool:
-    return _state(payload).has_blocking_errors()
-
-
-@concept(Concept.CONDITIONAL_BRANCHING)
-def approved(payload: Any) -> bool:
-    return _state(payload).approval_decision == "approve"
-
-
-@concept(Concept.CONDITIONAL_BRANCHING)
-def rejected(payload: Any) -> bool:
-    return _state(payload).approval_decision != "approve"
+def must_escalate(payload: Any) -> bool:
+    return _state(payload).must_escalate()
 
 
 @concept(Concept.CONDITIONAL_BRANCHING, Concept.NO_FABRICATED_CLAIMS)
@@ -95,7 +69,7 @@ def should_escalate(payload: Any) -> bool:
 
 
 @concept(Concept.WORKFLOW_DECOMPOSITION, Concept.CONDITIONAL_BRANCHING, Concept.AGENTIC_FIRST)
-def build_workflow(checkpoint_storage: CheckpointStorage | None = None) -> Workflow:
+def build_workflow() -> Workflow:
     """Assemble the workflow graph.
 
     Fresh executor instances per call, so two concurrent runs never share state.
@@ -103,7 +77,6 @@ def build_workflow(checkpoint_storage: CheckpointStorage | None = None) -> Workf
     ingest = IngestExecutor()
     plan = PlanExecutor()
     risk_gate = RiskGateExecutor()
-    approval = ApprovalExecutor()
     draft_email = DraftEmailExecutor()
     task_list = TaskListExecutor()
     reflect = ReflectExecutor()
@@ -116,31 +89,25 @@ def build_workflow(checkpoint_storage: CheckpointStorage | None = None) -> Workf
         name=WORKFLOW_NAME,
         description="Validate a customer record, draft a welcome email, generate tasks, log results",
         start_executor=ingest,
-        checkpoint_storage=checkpoint_storage,
         output_from=[finalize, escalate],
     )
 
     builder.add_edge(ingest, plan)
     builder.add_edge(plan, risk_gate)
 
-    # 1. blocking errors never reach a model; high risk goes to a human first
+    # 1. a record with blocking errors or an injection attempt never reaches a model
     builder.add_switch_case_edge_group(
         risk_gate,
         [
-            Case(condition=has_blocking_errors, target=escalate),
-            Case(condition=needs_approval, target=approval),
+            Case(condition=must_escalate, target=escalate),
             Default(target=draft_email),
         ],
     )
 
-    # 2. what the human decided
-    builder.add_edge(approval, draft_email, condition=approved)
-    builder.add_edge(approval, escalate, condition=rejected)
-
     builder.add_edge(draft_email, task_list)
     builder.add_edge(task_list, reflect)
 
-    # 3. bounded repair loop, then confidence fallback or finish
+    # 2. bounded repair loop, then confidence fallback or finish
     builder.add_switch_case_edge_group(
         reflect,
         [
