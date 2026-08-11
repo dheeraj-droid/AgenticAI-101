@@ -42,7 +42,8 @@ def create_app(*, allow_send: bool = False) -> FastAPI:
             "frameworks": [
                 {
                     "id": name,
-                    "label": _LABELS[name],
+                    "label": _LABELS[name][0],
+                    "full_name": _LABELS[name][1],
                     "note": get_adapter(name).capabilities.notes,
                 }
                 for name in FRAMEWORKS
@@ -79,11 +80,13 @@ def create_app(*, allow_send: bool = False) -> FastAPI:
     return app
 
 
+# (tab label, full name). The tab strip has four equal columns, so the label has
+# to fit one of them; the full name goes in the tooltip.
 _LABELS = {
-    "maf": "Microsoft Agent Framework",
-    "langchain": "LangChain",
-    "langgraph": "LangGraph",
-    "crew": "CrewAI",
+    "maf": ("Agent Framework", "Microsoft Agent Framework"),
+    "langchain": ("LangChain", "LangChain"),
+    "langgraph": ("LangGraph", "LangGraph"),
+    "crew": ("CrewAI", "CrewAI"),
 }
 
 

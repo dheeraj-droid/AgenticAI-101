@@ -25,6 +25,7 @@ from onboarding.core.schemas import CustomerRecord, OnboardingResult
 from onboarding.core.tasks import read_tasks
 from onboarding.web.models import (
     ChatResponse,
+    FindingView,
     MailView,
     OnboardRequest,
     OnboardResponse,
@@ -107,7 +108,10 @@ def _describe(
         headline=headline,
         duplicate=outcome == "duplicate",
         registered=result.registered,
-        findings=[f"[{f.severity}] {f.code}: {f.message}" for f in result.findings],
+        findings=[
+            FindingView(code=f.code, severity=f.severity, message=f.message)
+            for f in result.findings
+        ],
         pii_entity_types=list(result.pii_entity_types),
         injection_signals=[s.pattern_id for s in result.injection_signals],
         risk_band=result.risk.band,

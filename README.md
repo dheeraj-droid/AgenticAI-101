@@ -55,19 +55,18 @@ Or edit `.env` for Groq / Gemini / Anthropic — three variables, no code change
 uv run onboarding serve             # http://127.0.0.1:8000
 ```
 
-Fill in a customer, pick one of the four frameworks, submit. The agent validates
-the record, checks for a duplicate, registers them, writes the welcome email and
-sends the task list to the support address — and the page shows you every
-message it produced **and whether it was actually transmitted**. Then the chat
-panel opens underneath, backed by the customer registry.
+One tab per framework. Fill in the customer once, then run it through whichever
+agent you like — each tab keeps its own result and its own chat, so you can flip
+between them and compare. The page shows every message the run produced **and
+whether it was actually transmitted**, the task list, and what was masked.
 
 **Submit the same customer twice.** The second run takes the duplicate branch:
 no registration, no model call, and a plain "you already have an account" note
 instead of a welcome email.
 
-**Then switch the framework and submit a different customer.** Same page, same
-form, same pipeline — the only thing that changed is which agent framework ran
-it, which is the whole point.
+**Then switch tabs and press Onboard again.** Same form, same pipeline — the only
+thing that changed is which agent framework ran it. A dot on a tab means that
+framework has a result waiting; flip between them to compare.
 
 Things to ask the chat panel:
 

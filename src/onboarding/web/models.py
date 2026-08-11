@@ -90,6 +90,16 @@ class MailView(BaseModel):
     reason: str
 
 
+class FindingView(BaseModel):
+    """One validation finding, structured so the page can style the severity."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    severity: str
+    message: str
+
+
 class TaskView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -118,7 +128,7 @@ class OnboardResponse(BaseModel):
     headline: str
     duplicate: bool
     registered: bool
-    findings: list[str] = Field(default_factory=list)
+    findings: list[FindingView] = Field(default_factory=list)
     pii_entity_types: list[str] = Field(default_factory=list)
     injection_signals: list[str] = Field(default_factory=list)
     risk_band: str = "low"
@@ -156,4 +166,4 @@ def describe_outcome(result: OnboardingResult) -> tuple[str, str]:
         return "duplicate", "Already signed up — we sent them a note saying so."
     if result.registered:
         return "registered", "Registered. Welcome email sent, task list sent to support."
-    return "blocked", "Not registered — see the findings below."
+    return "blocked", "Not registered — the run stopped before anything was drafted."

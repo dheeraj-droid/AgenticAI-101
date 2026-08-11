@@ -114,7 +114,8 @@ def test_an_invalid_record_is_reported_and_not_registered(client) -> None:
 
     assert body["registered"] is False
     assert body["outcome"] == "blocked"
-    assert any("NO_PRODUCTS" in f for f in body["findings"])
+    assert any(f["code"] == "NO_PRODUCTS" and f["severity"] == "error"
+               for f in body["findings"])
     assert read_all() == []
 
 
