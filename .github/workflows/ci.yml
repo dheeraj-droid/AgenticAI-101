@@ -12,8 +12,15 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Windows is in the matrix deliberately. A Unix-only `import fcntl` once
+    # made the whole package unusable on Windows and Linux-only CI never
+    # noticed. The portability tests forbid that class of bug; this proves it.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +57,8 @@ jobs:
         run: uv run onboarding compare
 
       - name: Check the generated concept map is current
+        # sed/diff based, so Linux only; the check is platform-independent.
+        if: runner.os == 'Linux'
         run: |
           uv run onboarding concepts --format md > /tmp/concepts_generated.md
           # docs/concepts.md carries a hand-written preamble; compare the table only.

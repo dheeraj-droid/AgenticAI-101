@@ -11,20 +11,25 @@ reach it, so the agent can answer questions about the registry but can never
 change it.
 
 CSV rather than a database because the point is that you can open it. That
-choice costs concurrent-write safety, so the writer takes an exclusive file lock
-and re-reads before appending.
+choice costs concurrent-write safety, so the writer takes an exclusive lock on a
+sidecar ``.csv.lock`` file and re-reads before appending.
+
+The lock comes from ``filelock`` rather than ``fcntl``: fcntl is Unix-only, and
+importing it broke every adapter on Windows. Cross-platform locking is fiddly
+enough to be worth a dependency rather than a hand-rolled branch.
 """
 
 from __future__ import annotations
 
 import csv
-import fcntl
 import os
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
+
+from filelock import FileLock
 
 from onboarding.core.concepts import Concept, concept
 from onboarding.core.config import paths
@@ -43,6 +48,9 @@ FIELDNAMES = (
 )
 
 DuplicateKind = Literal["record_id", "email", "company", "none"]
+
+# Long enough to outlast a slow write, short enough to surface a stuck process.
+LOCK_TIMEOUT_SECONDS = 30
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +98,11 @@ class PlanBreakdown:
 def registry_path() -> Path:
     override = os.environ.get("ONBOARDING_REGISTRY")
     return Path(override) if override else paths().runs / "registry.csv"
+
+
+def lock_path(target: Path | None = None) -> Path:
+    """Sidecar lock file guarding writes to the registry."""
+    return (target or registry_path()).with_suffix(".csv.lock")
 
 
 def _normalise_plan(plan: str) -> str:
@@ -214,8 +227,8 @@ def append_customer(
 ) -> RegistryRow:
     """Add one customer to the table.
 
-    Takes an exclusive lock and re-checks for a duplicate *inside* the lock, so
-    two runs racing on the same record cannot both insert.
+    Takes an exclusive cross-platform lock and re-checks for a duplicate
+    *inside* the lock, so two runs racing on the same record cannot both insert.
     """
     target = path or registry_path()
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -232,10 +245,11 @@ def append_customer(
         run_id=run_id,
     )
 
-    is_new_file = not target.exists() or target.stat().st_size == 0
-    with open(target, "a+", newline="", encoding="utf-8") as fh:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-        try:
+    with FileLock(str(lock_path(target)), timeout=LOCK_TIMEOUT_SECONDS):
+        # Re-read inside the lock: another run may have inserted this record
+        # between our duplicate check and getting here.
+        is_new_file = not target.exists() or target.stat().st_size == 0
+        with open(target, "a+", newline="", encoding="utf-8") as fh:
             if is_new_file:
                 csv.DictWriter(fh, fieldnames=FIELDNAMES).writeheader()
             else:
@@ -249,8 +263,6 @@ def append_customer(
             csv.DictWriter(fh, fieldnames=FIELDNAMES).writerow(row.as_dict())
             fh.flush()
             os.fsync(fh.fileno())
-        finally:
-            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
     return row
 
 
