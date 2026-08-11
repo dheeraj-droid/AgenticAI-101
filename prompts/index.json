@@ -4,5 +4,6 @@
   "repair_discount": 1,
   "task_enrichment": 1,
   "query_rewrite": 1,
-  "agent_instructions": 1
+  "agent_instructions": 1,
+  "chat_analyst": 1
 }

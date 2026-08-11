@@ -51,6 +51,9 @@ class MafAdapter:
         extras={"switch_case_groups": "2", "executors": "10", "agent_tools": "5"},
     )
 
+    def __init__(self, *, allow_send: bool = False) -> None:
+        self.allow_send = allow_send
+
     def _storage(self) -> FileCheckpointStorage:
         paths().ensure_runs()
         return FileCheckpointStorage(
@@ -67,7 +70,7 @@ class MafAdapter:
     async def run(
         self, record: CustomerRecord, *, run_id: str, record_path: str | None = None
     ) -> OnboardingResult:
-        executors.set_context(llm=self._caller(), record_path=record_path)
+        executors.set_context(llm=self._caller(), record_path=record_path, allow_send=self.allow_send)
         state = steps.new_state(record, run_id, self.name)
         sink = default_sink(run_id, record.record_id, self.name)
         sink.emit("run_started", framework=self.name, company=record.company_name)
@@ -81,7 +84,7 @@ class MafAdapter:
     async def resume(self, run_id: str, decision: ApprovalDecision) -> OnboardingResult:
         """Resume a paused workflow from its on-disk checkpoint, in a fresh process."""
         entry = ResumeIndex().get(run_id)
-        executors.set_context(llm=self._caller(), record_path=entry.record_path)
+        executors.set_context(llm=self._caller(), record_path=entry.record_path, allow_send=self.allow_send)
         sink = default_sink(run_id, entry.record_id, self.name)
 
         storage = self._storage()

@@ -58,6 +58,9 @@ class LangChainAdapter:
         extras={"agent_tools": "6", "graph_nodes": "n/a"},
     )
 
+    def __init__(self, *, allow_send: bool = False) -> None:
+        self.allow_send = allow_send
+
     @concept(Concept.SINGLE_VS_MULTI_AGENT, Concept.STATELESS_VS_STATEFUL, Concept.AGENT_VS_LLM_APP)
     async def run(
         self, record: CustomerRecord, *, run_id: str, record_path: str | None = None
@@ -92,6 +95,9 @@ class LangChainAdapter:
             state = steps.reflect(state, sink)
         if steps.should_escalate(state):
             state = steps.escalate(state, sink)
+        else:
+            state = steps.register_customer(state, sink)
+            state = steps.send_notifications(state, sink, allow_send=self.allow_send)
 
         return steps.finalize(state, sink)
 

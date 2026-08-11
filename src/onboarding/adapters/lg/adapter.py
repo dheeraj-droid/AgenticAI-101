@@ -47,6 +47,9 @@ class LangGraphAdapter:
         extras={"conditional_branch_points": "3", "nodes": "11"},
     )
 
+    def __init__(self, *, allow_send: bool = False) -> None:
+        self.allow_send = allow_send
+
     def _caller(self):
         if not llm_spec().configured:
             return None
@@ -57,7 +60,7 @@ class LangGraphAdapter:
         self, record: CustomerRecord, *, run_id: str, record_path: str | None = None
     ) -> OnboardingResult:
         paths().ensure_runs()
-        nodes.set_context(llm=self._caller(), record_path=record_path)
+        nodes.set_context(llm=self._caller(), record_path=record_path, allow_send=self.allow_send)
         state = steps.new_state(record, run_id, self.name)
         sink = default_sink(run_id, record.record_id, self.name)
         sink.emit("run_started", framework=self.name, company=record.company_name)
@@ -74,7 +77,7 @@ class LangGraphAdapter:
     async def resume(self, run_id: str, decision: ApprovalDecision) -> OnboardingResult:
         """Resume a paused run from the on-disk checkpoint, in a fresh process."""
         entry = ResumeIndex().get(run_id)
-        nodes.set_context(llm=self._caller(), record_path=entry.record_path)
+        nodes.set_context(llm=self._caller(), record_path=entry.record_path, allow_send=self.allow_send)
         sink = default_sink(run_id, entry.record_id, self.name)
 
         config = {"configurable": {"thread_id": entry.thread_id or run_id}}

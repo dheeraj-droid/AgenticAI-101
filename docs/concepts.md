@@ -12,7 +12,9 @@ three frameworks.
 | Agent loop: Perception | `core` | `onboarding.core.chunking:chunk_notes` |
 | Agent loop: Perception | `core` | `onboarding.core.injection:InjectionScanner.scan` |
 | Agent loop: Perception | `core` | `onboarding.core.pii:redact_record` |
+| Agent loop: Perception | `core` | `onboarding.core.registry:find_duplicate` |
 | Agent loop: Perception | `core` | `onboarding.core.steps:build_safe_context` |
+| Agent loop: Perception | `core` | `onboarding.core.steps:check_already_registered` |
 | Agent loop: Perception | `core` | `onboarding.core.steps:perceive` |
 | Agent loop: Perception | `core` | `onboarding.core.validation:validate_record` |
 | Agent loop: Perception | `langgraph` | `onboarding.adapters.lg.nodes:ingest` |
@@ -22,14 +24,22 @@ three frameworks.
 | Agent loop: Planning | `core` | `onboarding.core.steps:plan` |
 | Agent loop: Planning | `langgraph` | `onboarding.adapters.lg.nodes:plan` |
 | Agent loop: Planning | `maf` | `onboarding.adapters.maf.executors:PlanExecutor.plan` |
+| Agent loop: Action | `core` | `onboarding.core.mailer:build_customer_mail` |
+| Agent loop: Action | `core` | `onboarding.core.mailer:build_team_mail` |
+| Agent loop: Action | `core` | `onboarding.core.mailer:deliver` |
 | Agent loop: Action | `core` | `onboarding.core.planning:derive_tasks` |
+| Agent loop: Action | `core` | `onboarding.core.registry:append_customer` |
 | Agent loop: Action | `core` | `onboarding.core.steps:act_build_tasks` |
 | Agent loop: Action | `core` | `onboarding.core.steps:act_draft_email` |
+| Agent loop: Action | `core` | `onboarding.core.steps:register_customer` |
+| Agent loop: Action | `core` | `onboarding.core.steps:send_notifications` |
 | Agent loop: Action | `langchain` | `onboarding.adapters.lc.tools:check_region_compliance` |
 | Agent loop: Action | `langchain` | `onboarding.adapters.lc.tools:lookup_product_catalog` |
 | Agent loop: Action | `langchain` | `onboarding.adapters.lc.tools:lookup_sla_matrix` |
 | Agent loop: Action | `langgraph` | `onboarding.adapters.lg.nodes:build_tasks` |
+| Agent loop: Action | `langgraph` | `onboarding.adapters.lg.nodes:deliver` |
 | Agent loop: Action | `langgraph` | `onboarding.adapters.lg.nodes:draft_email` |
+| Agent loop: Action | `maf` | `onboarding.adapters.maf.executors:DeliverExecutor.deliver` |
 | Agent loop: Action | `maf` | `onboarding.adapters.maf.executors:DraftEmailExecutor.draft` |
 | Agent loop: Action | `maf` | `onboarding.adapters.maf.executors:TaskListExecutor.build` |
 | Agent loop: Reflection | `core` | `onboarding.core.confidence:score_confidence` |
@@ -137,6 +147,10 @@ three frameworks.
 | Durable state & resume | `maf` | `onboarding.adapters.maf.executors:ApprovalExecutor.request_approval` |
 | Audit logging | `core` | `onboarding.core.audit:JsonlAuditSink.emit` |
 | Audit logging | `core` | `onboarding.core.hitl:record_approval_required` |
+| Audit logging | `core` | `onboarding.core.mailer:deliver` |
+| Audit logging | `core` | `onboarding.core.registry:append_customer` |
 | Audit logging | `core` | `onboarding.core.steps:finalize` |
+| Audit logging | `core` | `onboarding.core.steps:register_customer` |
+| Audit logging | `core` | `onboarding.core.steps:send_notifications` |
 | Audit logging | `langgraph` | `onboarding.adapters.lg.nodes:finalize` |
 | Audit logging | `maf` | `onboarding.adapters.maf.executors:FinalizeExecutor.finalize` |

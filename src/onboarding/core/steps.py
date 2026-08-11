@@ -25,13 +25,21 @@ from onboarding.core.confidence import below_threshold, escalation_reasons, scor
 from onboarding.core.discounts import VALIDATOR, input_number_set, render_allowlist
 from onboarding.core.injection import InjectionScanner, has_blocking_signal, neutralise
 from onboarding.core.llm import LlmCaller
+from onboarding.core.mailer import build_customer_mail, build_team_mail, deliver
 from onboarding.core.pii import contains_raw_pii, get_pii_engine, redact_record
 from onboarding.core.planning import decompose, derive_tasks
 from onboarding.core.prompts import PromptLibrary, library
+from onboarding.core.registry import (
+    AlreadyRegisteredError,
+    append_customer,
+    find_duplicate,
+    registry_path,
+)
 from onboarding.core.risk import assess_risk
 from onboarding.core.rules import RULES
 from onboarding.core.schemas import (
     CustomerRecord,
+    Finding,
     OnboardingResult,
     OnboardingState,
     OnboardingTask,
@@ -74,6 +82,8 @@ def perceive(state: OnboardingState, sink: JsonlAuditSink) -> OnboardingState:
     record = state.record
 
     findings = validate_record(record)
+    findings.extend(check_already_registered(record, sink))
+    findings.sort(key=lambda f: (f.code, f.field_path))
     sink.emit(
         "record_validated",
         finding_codes=[f.code for f in findings],
@@ -121,6 +131,39 @@ def perceive(state: OnboardingState, sink: JsonlAuditSink) -> OnboardingState:
     )
     state.perception = perception
     return state
+
+
+@concept(Concept.PERCEPTION)
+def check_already_registered(record: CustomerRecord, sink: JsonlAuditSink) -> list[Finding]:
+    """Has this customer been onboarded before?
+
+    Expressed as findings rather than as a new branch, so it rides the routing
+    that already exists: an exact hit is a blocking error and escalates, while a
+    same-company suspicion is a warning, which the approval rules already treat
+    as needing a human. A second team at the same company is a real thing to
+    onboard — that call belongs to a person, not to a regex.
+    """
+    match = find_duplicate(record)
+    sink.emit("duplicate_checked", kind=match.kind, detail=match.detail)
+    if not match.is_duplicate:
+        return []
+    if match.kind in ("record_id", "email"):
+        return [
+            Finding(
+                code="ALREADY_REGISTERED",
+                severity="error",
+                field_path="record_id",
+                message=match.detail,
+            )
+        ]
+    return [
+        Finding(
+            code="POSSIBLE_DUPLICATE",
+            severity="warning",
+            field_path="company_name",
+            message=match.detail,
+        )
+    ]
 
 
 @concept(Concept.CONTEXT_AWARE_PROMPT, Concept.PERCEPTION)
@@ -510,6 +553,79 @@ def escalate(state: OnboardingState, sink: JsonlAuditSink, extra_reason: str = "
 # ---------------------------------------------------------------------------
 
 
+def _not_registerable(state: OnboardingState) -> str:
+    """Why this run must not be written to the registry, or "" if it may be.
+
+    Checked explicitly rather than inferred from call order, so a caller that
+    wires the steps in a different sequence still cannot register a customer who
+    was blocked, rejected or escalated.
+    """
+    if state.status != "completed":
+        return f"the run status is {state.status}"
+    if state.has_blocking_errors():
+        return "the record has blocking validation errors"
+    if state.reflection is not None and not state.reflection.passed:
+        return "the draft did not pass reflection"
+    if state.requires_human_approval() and state.approval_decision != "approve":
+        return "the run still needs human approval"
+    if state.escalation_queue:
+        return "the run was escalated"
+    return ""
+
+
+@concept(Concept.ACTION, Concept.AUDIT_LOGGING)
+def register_customer(state: OnboardingState, sink: JsonlAuditSink) -> OnboardingState:
+    """Add the customer to the registry table.
+
+    Only ever called from deterministic pipeline code — never exposed as a tool,
+    so no model can cause a write. A run that is blocked, rejected or escalated
+    does not register: the table records customers we actually onboarded.
+    """
+    reason = _not_registerable(state)
+    if reason:
+        sink.emit("registration_skipped", reason=reason)
+        return state
+    if state.registered:
+        return state
+    try:
+        row = append_customer(state.record, run_id=state.run_id)
+    except AlreadyRegisteredError as exc:
+        state.escalation_queue.append(str(exc))
+        sink.emit("registration_skipped", reason=str(exc))
+        return state
+    state.registered = True
+    sink.emit("customer_registered", plan=row.plan, registry=str(registry_path()))
+    return state
+
+
+@concept(Concept.ACTION, Concept.AUDIT_LOGGING)
+def send_notifications(
+    state: OnboardingState, sink: JsonlAuditSink, *, allow_send: bool = False
+) -> OnboardingState:
+    """Mail the team, and the customer if there is an approved draft to send.
+
+    Both messages always land in the outbox. Transmission additionally needs
+    SMTP configured and ``--send``; the customer message needs the record to
+    have cleared approval on top of that.
+    """
+    if not state.registered:
+        sink.emit("mail_skipped", reason="the customer was not registered")
+        return state
+
+    team = build_team_mail(state.record, state.tasks, state.run_id, registered=state.registered)
+    results = [deliver(team, sink, allow_send=allow_send, approved=True)]
+
+    if state.email is not None:
+        approved = state.approval_decision == "approve" or not state.requires_human_approval()
+        customer = build_customer_mail(state.record, state.email, state.run_id)
+        results.append(deliver(customer, sink, allow_send=allow_send, approved=approved))
+    else:
+        sink.emit("mail_skipped", reason="no welcome email was drafted for the customer")
+
+    state.mail_outbox.extend(str(r.path) for r in results if r.path)
+    return state
+
+
 @concept(Concept.AUDIT_LOGGING)
 def finalize(state: OnboardingState, sink: JsonlAuditSink, *, resume_token: str | None = None) -> OnboardingResult:
     """Assemble the shared output schema. All three adapters end here."""
@@ -537,6 +653,8 @@ def finalize(state: OnboardingState, sink: JsonlAuditSink, *, resume_token: str 
         reflection=reflection or Reflection(),
         confidence=reflection.confidence if reflection else 0.0,
         escalation_queue=list(state.escalation_queue),
+        registered=state.registered,
+        mail_outbox=list(state.mail_outbox),
         prompt_refs=list(state.prompt_refs),
         audit_log_path=str(sink.path),
         audit_event_ids=list(state.audit_event_ids) + list(sink.event_ids),

@@ -31,6 +31,7 @@ def build_graph() -> StateGraph:
     g.add_node("build_tasks", nodes.build_tasks)
     g.add_node("reflect", nodes.reflect)
     g.add_node("repair", nodes.repair)
+    g.add_node("deliver", nodes.deliver)
     g.add_node("escalate", nodes.escalate)
     g.add_node("finalize", nodes.finalize)
 
@@ -63,9 +64,11 @@ def build_graph() -> StateGraph:
     g.add_conditional_edges(
         "reflect",
         nodes.route_after_reflect,
-        {"repair": "repair", "escalate": "escalate", "finalize": "finalize"},
+        {"repair": "repair", "escalate": "escalate", "finalize": "deliver"},
     )
     g.add_edge("repair", "reflect")
+    # Registration and mail happen only on the path that passed reflection.
+    g.add_edge("deliver", "finalize")
 
     g.add_edge("finalize", END)
     g.add_edge("escalate", END)

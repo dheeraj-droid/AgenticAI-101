@@ -31,12 +31,15 @@ from onboarding.core.schemas import (
 StatePayload = dict[str, Any]
 
 # Set by the adapter before each run.
-_CONTEXT: dict[str, Any] = {"llm": None, "record_path": None}
+_CONTEXT: dict[str, Any] = {"llm": None, "record_path": None, "allow_send": False}
 
 
-def set_context(*, llm: LlmCaller | None, record_path: str | None = None) -> None:
+def set_context(
+    *, llm: LlmCaller | None, record_path: str | None = None, allow_send: bool = False
+) -> None:
     _CONTEXT["llm"] = llm
     _CONTEXT["record_path"] = record_path
+    _CONTEXT["allow_send"] = allow_send
 
 
 def _load(payload: StatePayload) -> OnboardingState:
@@ -194,6 +197,22 @@ class RepairExecutor(Executor):
     async def repair(self, payload: StatePayload, ctx: WorkflowContext[dict[str, Any]]) -> None:
         state = _load(payload)
         await ctx.send_message(_dump(await steps.repair_email(state, _llm(), _sink(state))))
+
+
+class DeliverExecutor(Executor):
+    """Action: register the customer, then notify the team and the customer."""
+
+    def __init__(self, id: str = "deliver") -> None:
+        super().__init__(id=id)
+
+    @handler
+    @concept(Concept.ACTION)
+    async def deliver(self, payload: StatePayload, ctx: WorkflowContext[dict[str, Any]]) -> None:
+        state = _load(payload)
+        sink = _sink(state)
+        state = steps.register_customer(state, sink)
+        updated = steps.send_notifications(state, sink, allow_send=_CONTEXT["allow_send"])
+        await ctx.send_message(_dump(updated))
 
 
 class EscalateExecutor(Executor):

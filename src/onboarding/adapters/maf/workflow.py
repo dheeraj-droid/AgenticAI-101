@@ -16,6 +16,7 @@ from agent_framework import Case, CheckpointStorage, Default, Workflow, Workflow
 
 from onboarding.adapters.maf.executors import (
     ApprovalExecutor,
+    DeliverExecutor,
     DraftEmailExecutor,
     EscalateExecutor,
     FinalizeExecutor,
@@ -49,6 +50,7 @@ EXECUTOR_IDS = (
     "task_list",
     "reflect",
     "repair",
+    "deliver",
     "escalate",
     "finalize",
 )
@@ -106,6 +108,7 @@ def build_workflow(checkpoint_storage: CheckpointStorage | None = None) -> Workf
     task_list = TaskListExecutor()
     reflect = ReflectExecutor()
     repair = RepairExecutor()
+    deliver = DeliverExecutor()
     escalate = EscalateExecutor()
     finalize = FinalizeExecutor()
 
@@ -143,9 +146,11 @@ def build_workflow(checkpoint_storage: CheckpointStorage | None = None) -> Workf
         [
             Case(condition=needs_repair, target=repair),
             Case(condition=should_escalate, target=escalate),
-            Default(target=finalize),
+            Default(target=deliver),
         ],
     )
     builder.add_edge(repair, reflect)
+    # Registration and mail happen only on the path that passed reflection.
+    builder.add_edge(deliver, finalize)
 
     return builder.build()

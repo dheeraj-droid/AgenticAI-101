@@ -20,12 +20,15 @@ from onboarding.core.llm import LlmCaller
 from onboarding.core.schemas import ApprovalDecision, OnboardingState
 
 # Set by the adapter before each run; the graph is otherwise pure.
-_CONTEXT: dict[str, Any] = {"llm": None, "record_path": None}
+_CONTEXT: dict[str, Any] = {"llm": None, "record_path": None, "allow_send": False}
 
 
-def set_context(*, llm: LlmCaller | None, record_path: str | None = None) -> None:
+def set_context(
+    *, llm: LlmCaller | None, record_path: str | None = None, allow_send: bool = False
+) -> None:
     _CONTEXT["llm"] = llm
     _CONTEXT["record_path"] = record_path
+    _CONTEXT["allow_send"] = allow_send
 
 
 def _load(payload: GraphState) -> OnboardingState:
@@ -140,6 +143,15 @@ def escalate(payload: GraphState) -> GraphState:
     return _dump(steps.escalate(state, _sink(state)))
 
 
+@concept(Concept.ACTION)
+def deliver(payload: GraphState) -> GraphState:
+    """Register the customer, then mail the team and the customer."""
+    state = _load(payload)
+    sink = _sink(state)
+    state = steps.register_customer(state, sink)
+    return _dump(steps.send_notifications(state, sink, allow_send=_CONTEXT["allow_send"]))
+
+
 @concept(Concept.AUDIT_LOGGING)
 def finalize(payload: GraphState) -> GraphState:
     state = _load(payload)
@@ -158,6 +170,7 @@ NODES = (
     build_tasks,
     reflect,
     repair,
+    deliver,
     escalate,
     finalize,
 )

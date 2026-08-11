@@ -34,6 +34,8 @@ app = typer.Typer(
 )
 prompts_app = typer.Typer(help="Inspect and verify the versioned prompt library.")
 app.add_typer(prompts_app, name="prompts")
+registry_app = typer.Typer(help="Inspect the customer registry (read-only).")
+app.add_typer(registry_app, name="registry")
 
 console = Console()
 
@@ -105,10 +107,11 @@ def run(
     record: Annotated[Path, typer.Option("--record", "-r", help="Path to a customer record JSON")],
     framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph")] = "langgraph",
     json_out: Annotated[bool, typer.Option("--json", help="Print the full result as JSON")] = False,
+    send: Annotated[bool, typer.Option("--send", help="Actually transmit mail (needs SMTP_HOST)")] = False,
 ) -> None:
     """Run the assistant over one customer record."""
     customer = load_record(record)
-    adapter = get_adapter(framework)
+    adapter = get_adapter(framework, allow_send=send)
     run_id = new_run_id(customer.record_id, adapter.name)
     try:
         result = asyncio.run(adapter.run(customer, run_id=run_id, record_path=str(record)))
@@ -366,6 +369,136 @@ def audit(
     console.print(table)
 
 
+@app.command()
+def chat(
+    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph")] = "langchain",
+    record: Annotated[Path | None, typer.Option("--record", "-r", help="Pin the conversation to one customer")] = None,
+    ask: Annotated[str | None, typer.Option("--ask", help="Ask one question and exit")] = None,
+) -> None:
+    """Ask questions about onboarded customers. Read-only — the agent cannot change anything."""
+    from onboarding.chat.session import build_session
+
+    customer = load_record(record) if record else None
+    try:
+        session = build_session(framework, customer)
+    except OnboardingError as exc:
+        console.print(f"[red]{type(exc).__name__}[/]: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    if ask:
+        _answer(session, ask)
+        return
+
+    console.print(
+        f"[bold]Customer Q&A[/] — {session.framework}. "
+        "Read-only: names and plans are visible, contact details are masked.\n"
+        "Ask a question, or type [bold]exit[/] to leave.\n"
+    )
+    while True:
+        try:
+            question = console.input("[bold cyan]you >[/] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print()
+            return
+        if question.lower() in ("exit", "quit", ":q"):
+            return
+        if question:
+            _answer(session, question)
+
+
+def _answer(session, question: str) -> None:
+    try:
+        turn = asyncio.run(session.ask(question))
+    except OnboardingError as exc:
+        console.print(f"[red]{type(exc).__name__}[/]: {exc}")
+        raise typer.Exit(code=1) from exc
+    except Exception as exc:
+        # Usually the endpoint is configured but not actually running. A stack
+        # trace is no help here; the fix almost always is `ollama serve`.
+        spec = llm_spec()
+        console.print(
+            f"[red]The model at {spec.base_url} could not be reached[/] "
+            f"({type(exc).__name__}: {str(exc)[:120]}).\n"
+            "Check the endpoint is running — for the default profile that is "
+            "[bold]ollama serve[/] — then try again."
+        )
+        raise typer.Exit(code=1) from exc
+    if turn.tool_calls:
+        console.print(f"[dim]  tools: {', '.join(turn.tool_calls)}[/]")
+    console.print(f"[bold green]agent >[/] {turn.answer}\n")
+
+
+@registry_app.command("show")
+def registry_show(
+    plan: Annotated[str | None, typer.Option("--plan", help="Filter to one plan")] = None,
+    reveal: Annotated[bool, typer.Option("--reveal", help="Show real contact details")] = False,
+) -> None:
+    """Show the customer registry. Contact details are masked unless --reveal."""
+    from onboarding.core import qa
+    from onboarding.core.registry import customers_on_plan, read_all, registry_path
+
+    rows = customers_on_plan(plan) if plan else read_all()
+    if not rows:
+        console.print(f"The registry is empty ({registry_path()}).")
+        return
+
+    table = Table(title=f"Customer registry — {registry_path()}")
+    for column in ("record_id", "name", "email", "phone", "plan", "company", "registered"):
+        table.add_column(column)
+    for row in rows:
+        shown = row if reveal else qa.mask_row(row)
+        table.add_row(
+            row.record_id,
+            row.customer_name,
+            shown.email,
+            shown.phone,
+            row.plan,
+            row.company_name,
+            row.registered_at[:19],
+        )
+    console.print(table)
+    console.print(qa.describe_breakdown())
+    if not reveal:
+        console.print("[dim]Contact details masked. Pass --reveal to see them.[/]")
+
+
+@registry_app.command("export")
+def registry_export(
+    out: Annotated[Path, typer.Option("--out", help="Where to write the CSV")],
+) -> None:
+    """Export the registry to a CSV you can open in Excel."""
+    from onboarding.core.registry import export_csv
+
+    console.print(f"Wrote [bold]{export_csv(out)}[/]")
+
+
+@app.command()
+def outbox(
+    show: Annotated[str | None, typer.Option("--show", help="Print one .eml by name")] = None,
+) -> None:
+    """List the mail the assistant produced (nothing is transmitted without --send)."""
+    from onboarding.core.mailer import list_outbox, outbox_dir
+
+    files = list_outbox()
+    if show:
+        matches = [f for f in files if show in f.name]
+        if not matches:
+            console.print(f"[red]No message matching {show!r}[/]")
+            raise typer.Exit(code=1)
+        console.print(matches[-1].read_text())
+        return
+    if not files:
+        console.print(f"The outbox is empty ({outbox_dir()}).")
+        return
+    table = Table(title=f"Outbox — {outbox_dir()}")
+    table.add_column("file")
+    table.add_column("size")
+    for path in files:
+        table.add_row(path.name, f"{path.stat().st_size} B")
+    console.print(table)
+    console.print("[dim]These were written locally. Nothing was transmitted.[/]")
+
+
 def _print_result(result: OnboardingResult) -> None:
     colour = {
         "completed": "green",
@@ -390,6 +523,9 @@ def _print_result(result: OnboardingResult) -> None:
             "[red]injection[/]", ", ".join(s.pattern_id for s in result.injection_signals)
         )
     table.add_row("tasks", f"{len(result.tasks)} ({sum(t.origin == 'rule' for t in result.tasks)} from policy)")
+    table.add_row("registered", "[green]yes[/]" if result.registered else "no")
+    if result.mail_outbox:
+        table.add_row("mail", "\n".join(Path(p).name for p in result.mail_outbox))
     table.add_row("confidence", str(result.confidence))
     if result.reflection.violations:
         table.add_row(

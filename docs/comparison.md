@@ -1,6 +1,6 @@
 # Framework comparison: Customer Onboarding Assistant
 
-_Generated 2026-08-10 18:01 UTC — 5 fixtures × 3 frameworks._
+_Generated 2026-08-11 02:11 UTC — 5 fixtures × 3 frameworks._
 
 ## Environment
 
@@ -52,8 +52,8 @@ _Generated 2026-08-10 18:01 UTC — 5 fixtures × 3 frameworks._
 | email words | — | — | — |
 | prompt versions | — | — | — |
 | llm calls | 0 | 0 | 0 |
-| resume token | CUST-2002-maf-20260810T180145-3682ec | **none** | CUST-2002-langgraph-20260810T180147-460fe8 |
-| duration ms | 552 | 467 | 565 |
+| resume token | CUST-2002-maf-20260811T021121-def9f0 | **none** | CUST-2002-langgraph-20260811T021122-61f7f9 |
+| duration ms | 588 | 495 | 589 |
 
 **IDENTICAL** — all frameworks agree on every deterministic field.
 
@@ -75,8 +75,8 @@ _Generated 2026-08-10 18:01 UTC — 5 fixtures × 3 frameworks._
 | email words | — | — | — |
 | prompt versions | — | — | — |
 | llm calls | 0 | 0 | 0 |
-| resume token | CUST-4004-maf-20260810T180148-f6ce38 | **none** | CUST-4004-langgraph-20260810T180149-7f09fb |
-| duration ms | 666 | 524 | 543 |
+| resume token | CUST-4004-maf-20260811T021123-580ab1 | **none** | CUST-4004-langgraph-20260811T021124-a34736 |
+| duration ms | 694 | 519 | 576 |
 
 **IDENTICAL** — all frameworks agree on every deterministic field.
 
@@ -98,8 +98,8 @@ _Generated 2026-08-10 18:01 UTC — 5 fixtures × 3 frameworks._
 | email words | — | — | — |
 | prompt versions | — | — | — |
 | llm calls | 0 | 0 | 0 |
-| resume token | CUST-5005-maf-20260810T180149-edf086 | **none** | CUST-5005-langgraph-20260810T180150-ce93f2 |
-| duration ms | 559 | 543 | 693 |
+| resume token | CUST-5005-maf-20260811T021125-d5bd55 | **none** | CUST-5005-langgraph-20260811T021126-f188ee |
+| duration ms | 486 | 481 | 713 |
 
 **IDENTICAL** — all frameworks agree on every deterministic field.
 
