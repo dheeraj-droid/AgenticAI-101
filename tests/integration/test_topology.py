@@ -1,9 +1,11 @@
-"""All three implementations construct, and their routing really is shared.
+"""All four implementations construct, and their routing really is shared.
 
 None of these tests calls a model — building a graph must never require one.
 """
 
 from __future__ import annotations
+
+import pytest
 
 from onboarding.adapters.base import FRAMEWORKS, get_adapter
 from onboarding.adapters.lg.graph import CONDITIONAL_BRANCH_POINTS, build_graph
@@ -90,6 +92,54 @@ def test_langchain_tool_surface_is_stable() -> None:
         "get_email_length_policy",
         "check_business_rules",
     }
+
+
+# --- CrewAI ----------------------------------------------------------------
+
+
+def test_crew_builds_without_network(monkeypatch) -> None:
+    """Constructing the crew makes no request, so this is safe offline."""
+    monkeypatch.setenv("LLM_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
+    monkeypatch.setenv("LLM_API_KEY", "not-needed")
+    from onboarding.adapters.crew.crew import build_crew
+
+    crew, refs = build_crew()
+    assert {r.id for r in refs} == {"system_policy", "agent_instructions"}
+    assert len(crew.agents) == 2, "the crew is the multi-agent point of comparison"
+    assert len(crew.tasks) == 2
+
+
+def test_the_crew_reviewer_cannot_gather_new_facts(monkeypatch) -> None:
+    """It reviews a draft; a reviewer that can look things up starts rewriting."""
+    monkeypatch.setenv("LLM_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
+    monkeypatch.setenv("LLM_API_KEY", "not-needed")
+    from onboarding.adapters.crew.crew import build_crew
+
+    crew, _ = build_crew()
+    writer, reviewer = crew.agents
+    assert "get_customer_context" not in {t.name for t in reviewer.tools}
+    assert "check_business_rules" in {t.name for t in reviewer.tools}
+    # ...and the writer drafts rather than signs off on itself.
+    assert "check_business_rules" not in {t.name for t in writer.tools}
+
+
+def test_crew_and_langchain_agents_get_the_same_facts() -> None:
+    """Any behavioural difference must come from orchestration, not information."""
+    from onboarding.adapters.crew.tools import CREW_TOOLS
+    from onboarding.adapters.lc.agent import AGENT_TOOL_NAMES
+
+    assert {t.name for t in CREW_TOOLS} == set(AGENT_TOOL_NAMES)
+
+
+def test_crew_telemetry_is_off() -> None:
+    """No third party is told about customer records."""
+    import os
+
+    import onboarding.adapters.crew  # noqa: F401  (the import is what sets it)
+
+    assert os.environ["CREWAI_TELEMETRY_OPT_OUT"] == "true"
 
 
 # --- shared routing --------------------------------------------------------
@@ -196,9 +246,34 @@ def test_every_adapter_declares_capabilities() -> None:
         assert caps.checkpoint_backend and caps.notes
 
 
-def test_only_langchain_is_stateless() -> None:
+def test_only_the_graph_frameworks_can_resume() -> None:
     """The comparison's headline claim, asserted rather than merely documented."""
-    assert get_adapter("langchain").capabilities.durable_resume is False
     assert get_adapter("maf").capabilities.durable_resume is True
     assert get_adapter("langgraph").capabilities.durable_resume is True
-    assert get_adapter("langchain").capabilities.agent_count == "single"
+    assert get_adapter("langchain").capabilities.durable_resume is False
+    assert get_adapter("crew").capabilities.durable_resume is False
+
+
+def test_only_the_crew_runs_more_than_one_agent_identity() -> None:
+    """``agent_count`` says multi for anything multi-step, including the graphs.
+
+    The distinction that actually matters is narrower: the crew is the only
+    adapter where two separate LLM identities, with separate context windows,
+    hand work to each other. That shows up as an ``agents`` count in extras.
+    """
+    declared = {f: get_adapter(f).capabilities.extras.get("agents") for f in FRAMEWORKS}
+    assert declared["crew"] == "2"
+    assert [f for f, n in declared.items() if n] == ["crew"]
+
+
+def test_the_stateless_adapters_say_so_when_asked_to_resume() -> None:
+    """A refusal that explains itself, rather than a silent no-op."""
+    import asyncio
+
+    from onboarding.core.errors import ResumeNotSupportedError
+    from onboarding.core.schemas import ApprovalDecision
+
+    for framework in ("langchain", "crew"):
+        with pytest.raises(ResumeNotSupportedError) as caught:
+            asyncio.run(get_adapter(framework).resume("r1", ApprovalDecision(decision="approve")))
+        assert "maf|langgraph" in str(caught.value)

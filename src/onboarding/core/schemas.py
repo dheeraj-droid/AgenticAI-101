@@ -28,7 +28,7 @@ RunStatus = Literal[
     "escalated",
     "failed",
 ]
-Framework = Literal["maf", "langchain", "langgraph"]
+Framework = Literal["maf", "langchain", "langgraph", "crew"]
 
 # Value objects are frozen; only OnboardingState is mutable.
 _VALUE = ConfigDict(extra="forbid", frozen=True)
@@ -426,3 +426,8 @@ class OnboardingState(BaseModel):
 
     def requires_human_approval(self) -> bool:
         return bool(self.risk and self.risk.requires_human_approval)
+
+    def is_duplicate(self) -> bool:
+        """Did this record turn out to be someone we already have?"""
+        p = self.perception
+        return bool(p and any(f.code == "ALREADY_REGISTERED" for f in p.findings))

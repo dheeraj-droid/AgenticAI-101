@@ -18,6 +18,7 @@ from pydantic import Field
 from onboarding.core import qa
 from onboarding.core.concepts import Concept, concept
 from onboarding.core.registry import registry_path
+from onboarding.core.tasks import pending_tasks, read_tasks, summarise
 
 
 @concept(Concept.ACTION, Concept.PII_DETECTION)
@@ -44,7 +45,7 @@ def list_customers_on_plan(
 def find_customer_details(
     query: Annotated[str, Field(description="A customer name, company, email or record id")],
 ) -> str:
-    """Look up one customer. Email and phone come back masked, by policy."""
+    """Look up one customer. Phone numbers are never included, by policy."""
     rows = qa.lookup(query)
     if not rows:
         return f"No customer matches {query!r}."
@@ -58,6 +59,43 @@ def list_all_customers() -> str:
     if not rows:
         return "The registry is empty."
     return "\n".join(f"- {r.as_line()}" for r in rows)
+
+
+@concept(Concept.ACTION)
+def task_progress_for_customer(
+    query: Annotated[str, Field(description="A customer name, company, email or record id")],
+) -> str:
+    """How many onboarding tasks are done for a customer, and which are left."""
+    matches = qa.lookup(query)
+    if not matches:
+        return f"No customer matches {query!r}."
+    lines = []
+    for customer in matches:
+        summary = summarise(customer.record_id)
+        lines.append(summary.describe(f"{customer.customer_name} ({customer.company_name})"))
+        outstanding = pending_tasks(customer.record_id)
+        if outstanding:
+            lines.append("  still to do: " + "; ".join(t.title for t in outstanding[:8]))
+    return "\n".join(lines)
+
+
+@concept(Concept.ACTION)
+def list_tasks_for_customer(
+    query: Annotated[str, Field(description="A customer name, company, email or record id")],
+) -> str:
+    """The full onboarding checklist for a customer, with each task's status."""
+    matches = qa.lookup(query)
+    if not matches:
+        return f"No customer matches {query!r}."
+    customer = matches[0]
+    rows = read_tasks(customer.record_id)
+    if not rows:
+        return f"{customer.customer_name} has no tasks recorded."
+    lines = [f"{customer.customer_name} — {len(rows)} task(s):"]
+    for row in rows:
+        tick = "x" if row.done else " "
+        lines.append(f"  [{tick}] {row.title} ({row.owner_role}, {row.priority})")
+    return "\n".join(lines)
 
 
 @concept(Concept.ACTION)
@@ -77,6 +115,8 @@ READ_ONLY_TOOLS = [
     list_customers_on_plan,
     find_customer_details,
     list_all_customers,
+    task_progress_for_customer,
+    list_tasks_for_customer,
     describe_registry,
 ]
 

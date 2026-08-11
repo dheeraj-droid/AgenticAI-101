@@ -76,7 +76,9 @@ class LangChainAdapter:
         state = steps.plan(steps.perceive(state, sink), sink)
 
         if state.has_blocking_errors():
-            return steps.finalize(steps.escalate(state, sink), sink)
+            state = steps.escalate(state, sink)
+            state = steps.notify_already_registered(state, sink, allow_send=self.allow_send)
+            return steps.finalize(state, sink)
 
         if state.requires_human_approval():
             # Same pause-log-stop behaviour as the other two adapters — but the

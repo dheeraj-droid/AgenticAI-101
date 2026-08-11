@@ -25,7 +25,12 @@ from onboarding.core.confidence import below_threshold, escalation_reasons, scor
 from onboarding.core.discounts import VALIDATOR, input_number_set, render_allowlist
 from onboarding.core.injection import InjectionScanner, has_blocking_signal, neutralise
 from onboarding.core.llm import LlmCaller
-from onboarding.core.mailer import build_customer_mail, build_team_mail, deliver
+from onboarding.core.mailer import (
+    build_already_registered_mail,
+    build_customer_mail,
+    build_team_mail,
+    deliver,
+)
 from onboarding.core.pii import contains_raw_pii, get_pii_engine, redact_record
 from onboarding.core.planning import decompose, derive_tasks
 from onboarding.core.prompts import PromptLibrary, library
@@ -50,6 +55,7 @@ from onboarding.core.schemas import (
     RuleViolation,
     WelcomeEmail,
 )
+from onboarding.core.tasks import write_tasks
 from onboarding.core.tone import validate_tone
 from onboarding.core.validation import has_errors, validate_record
 
@@ -548,6 +554,26 @@ def escalate(state: OnboardingState, sink: JsonlAuditSink, extra_reason: str = "
     return state
 
 
+@concept(Concept.ACTION, Concept.AUDIT_LOGGING)
+def notify_already_registered(
+    state: OnboardingState, sink: JsonlAuditSink, *, allow_send: bool = False
+) -> OnboardingState:
+    """Tell a returning customer they already have an account.
+
+    A duplicate is a blocking finding, so the run escalates and never reaches
+    ``send_notifications`` on the delivery node. The person who filled in the
+    form still deserves an answer, so this is called on the escalate path too.
+    It is a no-op for any other kind of escalation.
+    """
+    if not state.is_duplicate():
+        return state
+    mail = build_already_registered_mail(state.record, state.run_id)
+    result = deliver(mail, sink, allow_send=allow_send, approved=True)
+    if result.path and str(result.path) not in state.mail_outbox:
+        state.mail_outbox.append(str(result.path))
+    return state
+
+
 # ---------------------------------------------------------------------------
 # Finalisation
 # ---------------------------------------------------------------------------
@@ -594,7 +620,15 @@ def register_customer(state: OnboardingState, sink: JsonlAuditSink) -> Onboardin
         sink.emit("registration_skipped", reason=str(exc))
         return state
     state.registered = True
-    sink.emit("customer_registered", plan=row.plan, registry=str(registry_path()))
+    # The customer's checklist gets its own CSV, which the registry row points at.
+    checklist = write_tasks(state.record.record_id, state.tasks)
+    sink.emit(
+        "customer_registered",
+        plan=row.plan,
+        registry=str(registry_path()),
+        tasks_file=str(checklist),
+        tasks=len(state.tasks),
+    )
     return state
 
 
@@ -609,6 +643,8 @@ def send_notifications(
     have cleared approval on top of that.
     """
     if not state.registered:
+        if state.is_duplicate():
+            return notify_already_registered(state, sink, allow_send=allow_send)
         sink.emit("mail_skipped", reason="the customer was not registered")
         return state
 

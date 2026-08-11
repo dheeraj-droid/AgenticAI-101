@@ -57,7 +57,13 @@ def get_adapter(framework: str, *, allow_send: bool = False) -> OnboardingAdapte
         from onboarding.adapters.maf.adapter import MafAdapter
 
         return MafAdapter(allow_send=allow_send)
-    raise ValueError(f"unknown framework {framework!r}; expected one of: maf, langchain, langgraph")
+    if key in ("crew", "crewai"):
+        from onboarding.adapters.crew.adapter import CrewAdapter
+
+        return CrewAdapter(allow_send=allow_send)
+    raise ValueError(
+        f"unknown framework {framework!r}; expected one of: maf, langchain, langgraph, crew"
+    )
 
 
-FRAMEWORKS: tuple[Framework, ...] = ("maf", "langchain", "langgraph")
+FRAMEWORKS: tuple[Framework, ...] = ("maf", "langchain", "langgraph", "crew")

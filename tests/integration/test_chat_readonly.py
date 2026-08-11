@@ -5,8 +5,10 @@ Two guarantees, both structural rather than prompt-based:
 1. **No write capability.** No tool handed to a model can insert, edit or delete
    a customer, send mail, or approve a run. Checked by walking the call graph of
    every exposed tool, so adding a write-capable tool fails the build.
-2. **Contact details stay masked.** Names, companies and plans reach the model;
-   email addresses and phone numbers never do.
+2. **Phone numbers never reach the model.** Names, companies, plans and email
+   addresses are business facts an employee may see, and pass through in full.
+   The phone number is not masked — it is structurally absent from every type
+   this module returns, so there is nothing downstream to leak.
 """
 
 from __future__ import annotations
@@ -108,32 +110,35 @@ def test_the_registry_is_unchanged_after_answering_questions() -> None:
     chat_tools.find_customer_details("Ada")
     chat_tools.list_all_customers()
     chat_tools.describe_registry()
+    chat_tools.task_progress_for_customer("Ada")
+    chat_tools.list_tasks_for_customer("Ada")
 
     assert qa.all_customers() == rows_before
     assert registry_path().read_bytes() == bytes_before, "a chat tool modified the registry file"
 
 
-# --- 2. masking -------------------------------------------------------------
+# --- 2. what the model may see ----------------------------------------------
 
 
-def test_email_and_phone_are_masked_for_the_model() -> None:
-    append_customer(make_record(email="ada@acme.com"))
+def test_the_visible_row_has_no_phone_field_at_all() -> None:
+    """Not masked — absent. A field that does not exist cannot be leaked."""
+    append_customer(make_record())
     row = qa.all_customers()[0]
-    assert "ada@acme.com" not in row.email
-    assert row.email == "a***@a***.com"
-    assert "7946" not in row.phone
+    assert not hasattr(row, "phone")
+    assert "phone" not in qa.VisibleCustomer.__dataclass_fields__
 
 
-def test_name_company_and_plan_stay_visible() -> None:
-    """The agreed policy: these are business facts, not personal identifiers."""
+def test_name_company_plan_and_email_stay_visible() -> None:
+    """The agreed policy: these are business facts, not protected identifiers."""
     append_customer(make_record(name="Ada Lovelace", company="Acme", tier="growth"))
     row = qa.all_customers()[0]
     assert row.customer_name == "Ada Lovelace"
     assert row.company_name == "Acme"
     assert row.plan == "pro"
+    assert row.email == "ada@acme.com"
 
 
-def test_no_raw_contact_details_in_any_tool_output() -> None:
+def test_no_phone_number_in_any_tool_output() -> None:
     append_customer(make_record(email="ada@acme.com"))
     blob = " ".join(
         [
@@ -142,16 +147,21 @@ def test_no_raw_contact_details_in_any_tool_output() -> None:
             chat_tools.find_customer_details("Ada"),
             chat_tools.list_all_customers(),
             chat_tools.describe_registry(),
+            chat_tools.task_progress_for_customer("Ada"),
+            chat_tools.list_tasks_for_customer("Ada"),
         ]
     )
-    assert "ada@acme.com" not in blob
     assert "7946 0142" not in blob
     assert "+44 20 7946 0142" not in blob
+    # ...while the email an employee is allowed to see does come through.
+    assert "ada@acme.com" in blob
 
 
-def test_registry_context_is_masked() -> None:
+def test_registry_context_carries_email_but_never_phone() -> None:
     append_customer(make_record(email="ada@acme.com"))
-    assert "ada@acme.com" not in qa.registry_context()
+    context = qa.registry_context()
+    assert "ada@acme.com" in context
+    assert "7946" not in context
 
 
 # --- counting is done in code, not by the model -----------------------------
@@ -187,6 +197,8 @@ def test_tool_surface_is_stable_and_documented() -> None:
         "find_customer_details",
         "list_all_customers",
         "describe_registry",
+        "task_progress_for_customer",
+        "list_tasks_for_customer",
     }
     for fn in chat_tools.READ_ONLY_TOOLS:
         assert fn.__doc__, f"{fn.__name__} has no docstring for the model to read"

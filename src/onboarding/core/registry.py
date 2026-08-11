@@ -45,6 +45,7 @@ FIELDNAMES = (
     "status",
     "registered_at",
     "run_id",
+    "tasks_path",
 )
 
 DuplicateKind = Literal["record_id", "email", "company", "none"]
@@ -66,6 +67,8 @@ class RegistryRow:
     status: str = "registered"
     registered_at: str = ""
     run_id: str = ""
+    # Where this customer's task checklist lives, so the row points at its list.
+    tasks_path: str = ""
 
     def as_dict(self) -> dict[str, str]:
         return {name: getattr(self, name) for name in FIELDNAMES}
@@ -98,6 +101,13 @@ class PlanBreakdown:
 def registry_path() -> Path:
     override = os.environ.get("ONBOARDING_REGISTRY")
     return Path(override) if override else paths().runs / "registry.csv"
+
+
+def _tasks_path(record_id: str) -> Path:
+    """Imported lazily so core.tasks and core.registry do not import each other."""
+    from onboarding.core.tasks import tasks_path
+
+    return tasks_path(record_id)
 
 
 def lock_path(target: Path | None = None) -> Path:
@@ -243,6 +253,7 @@ def append_customer(
         status=status,
         registered_at=datetime.now(UTC).isoformat(timespec="seconds"),
         run_id=run_id,
+        tasks_path=str(_tasks_path(record.record_id)),
     )
 
     with FileLock(str(lock_path(target)), timeout=LOCK_TIMEOUT_SECONDS):

@@ -1,9 +1,10 @@
 """LLM wiring.
 
-One OpenAI-compatible endpoint drives all three frameworks:
+One OpenAI-compatible endpoint drives all four frameworks:
 
 * Microsoft Agent Framework -> ``OpenAIChatCompletionClient(base_url=..., model=...)``
 * LangChain / LangGraph     -> ``ChatOpenAI(base_url=..., model=...)``
+* CrewAI                    -> ``crewai.LLM(model="openai/...", base_url=...)``
 
 There is no fake, stub or mock model in this module or anywhere else in ``src``.
 If the endpoint is not configured, ``require_llm`` raises immediately.
@@ -64,6 +65,37 @@ def make_langchain_model(**kwargs: Any) -> ChatOpenAI:
     spec = require_llm()
     return ChatOpenAI(
         model=spec.model,
+        api_key=spec.api_key or "not-needed",
+        base_url=spec.base_url,
+        temperature=kwargs.pop("temperature", 0.2),
+        **kwargs,
+    )
+
+
+def make_crew_llm(**kwargs: Any) -> Any:
+    """Chat model for CrewAI.
+
+    ``provider="openai"`` selects CrewAI's native Chat Completions client, which
+    is what lets the same endpoint that serves the other three frameworks work
+    here unchanged. It is a protocol choice, not a claim about who hosts the
+    model — a local Ollama server is reached exactly this way.
+
+    Passing the provider explicitly also matters: without it CrewAI infers one
+    from the model name, and any name it does not recognise (``qwen2.5:3b`` and
+    every other local model) falls through to LiteLLM, which this project does
+    not depend on.
+    """
+    from onboarding.core.telemetry import opt_out
+
+    opt_out()
+
+    from crewai import LLM
+
+    spec = require_llm()
+    model = spec.model or ""
+    return LLM(
+        model=model.split("/", 1)[-1],
+        provider="openai",
         api_key=spec.api_key or "not-needed",
         base_url=spec.base_url,
         temperature=kwargs.pop("temperature", 0.2),

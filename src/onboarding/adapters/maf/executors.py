@@ -226,7 +226,9 @@ class EscalateExecutor(Executor):
     async def escalate(self, payload: StatePayload, ctx: WorkflowContext[Never, OnboardingResult]) -> None:
         state = _load(payload)
         sink = _sink(state)
-        await ctx.yield_output(steps.finalize(steps.escalate(state, sink), sink, resume_token=state.run_id))
+        state = steps.escalate(state, sink)
+        state = steps.notify_already_registered(state, sink, allow_send=_CONTEXT["allow_send"])
+        await ctx.yield_output(steps.finalize(state, sink, resume_token=state.run_id))
 
 
 class FinalizeExecutor(Executor):

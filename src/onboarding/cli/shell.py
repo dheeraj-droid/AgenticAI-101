@@ -55,7 +55,7 @@ class ShellState:
 HELP = [
     ("/run <fixture>", "Run the onboarding pipeline over a record"),
     ("/fixtures", "List the available customer records"),
-    ("/framework <name>", "Switch framework: maf | langchain | langgraph"),
+    ("/framework <name>", "Switch framework: maf | langchain | langgraph | crew"),
     ("/pending", "Show runs waiting on a human decision"),
     ("/approve [run_id]", "Approve a blocked run (defaults to the only one pending)"),
     ("/reject [run_id] [note]", "Reject a blocked run"),

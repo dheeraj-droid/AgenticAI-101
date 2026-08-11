@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,6 +32,7 @@ from onboarding.core.errors import RunNotFoundError
 from onboarding.core.schemas import (
     ApprovalDecision,
     ApprovalRequest,
+    Framework,
     OnboardingState,
 )
 
@@ -43,7 +44,9 @@ class ResumeEntry(BaseModel):
 
     run_id: str
     record_id: str
-    framework: Literal["maf", "langchain", "langgraph"]
+    # Reuse the shared alias rather than repeating the literal — a fourth
+    # framework should not have to be remembered in two places.
+    framework: Framework
     status: str = "blocked_awaiting_approval"
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     # Framework-native handles.

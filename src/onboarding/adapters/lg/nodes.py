@@ -140,7 +140,9 @@ async def repair(payload: GraphState) -> GraphState:
 @concept(Concept.CONFIDENCE_FALLBACK)
 def escalate(payload: GraphState) -> GraphState:
     state = _load(payload)
-    return _dump(steps.escalate(state, _sink(state)))
+    sink = _sink(state)
+    state = steps.escalate(state, sink)
+    return _dump(steps.notify_already_registered(state, sink, allow_send=_CONTEXT["allow_send"]))
 
 
 @concept(Concept.ACTION)

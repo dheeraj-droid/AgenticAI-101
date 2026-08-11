@@ -56,7 +56,7 @@ def default(ctx: typer.Context) -> None:
 
 @app.command()
 def demo(
-    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph")] = "langgraph",
+    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph | crew")] = "langgraph",
     record: Annotated[str, typer.Option("--record", "-r", help="Fixture name or path")] = "valid_smb",
 ) -> None:
     """Onboard a customer, then chat about them. The one command to see it all."""
@@ -71,7 +71,7 @@ def demo(
 
 @app.command()
 def shell(
-    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph")] = "langgraph",
+    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph | crew")] = "langgraph",
     send: Annotated[bool, typer.Option("--send", help="Allow real mail delivery (needs SMTP_HOST)")] = False,
 ) -> None:
     """Open the interactive console: run records, approve, and ask questions."""
@@ -145,7 +145,7 @@ def doctor() -> None:
 @app.command()
 def run(
     record: Annotated[Path, typer.Option("--record", "-r", help="Path to a customer record JSON")],
-    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph")] = "langgraph",
+    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph | crew")] = "langgraph",
     json_out: Annotated[bool, typer.Option("--json", help="Print the full result as JSON")] = False,
     send: Annotated[bool, typer.Option("--send", help="Actually transmit mail (needs SMTP_HOST)")] = False,
 ) -> None:
@@ -411,7 +411,7 @@ def audit(
 
 @app.command()
 def chat(
-    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph")] = "langchain",
+    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph | crew")] = "langchain",
     record: Annotated[Path | None, typer.Option("--record", "-r", help="Pin the conversation to one customer")] = None,
     ask: Annotated[str | None, typer.Option("--ask", help="Ask one question and exit")] = None,
 ) -> None:

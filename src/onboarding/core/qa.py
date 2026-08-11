@@ -9,16 +9,14 @@ tool built on this module can insert, edit or delete a customer. Changing the
 table is something deterministic pipeline code does; the agent only ever
 describes what is already there.
 
-**Contact details stay masked, names do not.** The agreed policy is that a
-customer's *name* and *plan* are ordinary business facts an employee may see,
-while email and phone are masked before anything reaches the model. That keeps
-"how many people are on the pro plan?" answerable while a leaked phone number
-stays impossible.
+**Phone numbers never reach the model at all.** Not masked, not partially — the
+field is simply absent from everything this module returns, so there is nothing
+for a model to leak or reconstruct. Names, emails, companies and plans are
+ordinary business facts an employee may see, and are passed through in full.
 """
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from onboarding.core.concepts import Concept, concept
@@ -30,66 +28,58 @@ from onboarding.core.registry import (
     plan_breakdown,
     read_all,
 )
+from onboarding.core.tasks import summarise
 
 KNOWN_PLANS: tuple[str, ...] = ("free", "pro", "pro+")
 
 
 @dataclass(frozen=True, slots=True)
-class MaskedCustomer:
-    """A registry row as the model is allowed to see it."""
+class VisibleCustomer:
+    """A registry row as the model is allowed to see it.
+
+    Note the absence of a phone field. It is not masked here — it is never
+    carried, so no code path downstream can accidentally surface it.
+    """
 
     record_id: str
     customer_name: str
     company_name: str
     plan: str
-    email: str  # masked
-    phone: str  # masked
+    email: str
     status: str
     registered_at: str
+    tasks_total: int = 0
+    tasks_completed: int = 0
 
     def as_line(self) -> str:
+        tasks = (
+            f", tasks: {self.tasks_completed}/{self.tasks_total} done"
+            if self.tasks_total
+            else ""
+        )
         return (
             f"{self.customer_name} ({self.company_name}) — plan: {self.plan}, "
-            f"email: {self.email}, phone: {self.phone}, status: {self.status}"
+            f"email: {self.email}, status: {self.status}{tasks}"
         )
 
 
-def _mask_email(email: str) -> str:
-    """Keep the shape, lose the identifier: ``d***@b***.com``."""
-    email = email.strip()
-    if "@" not in email:
-        return "<EMAIL_REDACTED>" if email else ""
-    local, _, domain = email.partition("@")
-    parts = domain.split(".")
-    host = parts[0] if parts else ""
-    tld = "." + ".".join(parts[1:]) if len(parts) > 1 else ""
-    return f"{local[:1]}***@{host[:1]}***{tld}"
-
-
-def _mask_phone(phone: str) -> str:
-    """Keep the country prefix and last two digits; hide the rest."""
-    phone = phone.strip()
-    if not phone:
-        return ""
-    digits = re.sub(r"\D", "", phone)
-    if len(digits) < 4:
-        return "<PHONE_REDACTED>"
-    prefix = "+" if phone.startswith("+") else ""
-    return f"{prefix}{digits[:2]}***{digits[-2:]}"
-
-
 @concept(Concept.PII_DETECTION)
-def mask_row(row: RegistryRow) -> MaskedCustomer:
-    """Apply the Q&A privacy policy to one row."""
-    return MaskedCustomer(
+def visible(row: RegistryRow) -> VisibleCustomer:
+    """Project a registry row down to what the model may see.
+
+    The phone number is dropped here and nowhere reintroduced.
+    """
+    summary = summarise(row.record_id)
+    return VisibleCustomer(
         record_id=row.record_id,
         customer_name=row.customer_name,
         company_name=row.company_name,
         plan=row.plan,
-        email=_mask_email(row.email),
-        phone=_mask_phone(row.phone),
+        email=row.email,
         status=row.status,
         registered_at=row.registered_at,
+        tasks_total=summary.total,
+        tasks_completed=summary.completed,
     )
 
 
@@ -99,15 +89,15 @@ def mask_row(row: RegistryRow) -> MaskedCustomer:
 
 
 @concept(Concept.ACTION)
-def lookup(query: str) -> list[MaskedCustomer]:
+def lookup(query: str) -> list[VisibleCustomer]:
     """Find customers by name, email, company or record id."""
-    return [mask_row(row) for row in find_customer(query)]
+    return [visible(row) for row in find_customer(query)]
 
 
 @concept(Concept.ACTION)
-def on_plan(plan: str) -> list[MaskedCustomer]:
+def on_plan(plan: str) -> list[VisibleCustomer]:
     """Every customer on a given plan."""
-    return [mask_row(row) for row in customers_on_plan(plan)]
+    return [visible(row) for row in customers_on_plan(plan)]
 
 
 @concept(Concept.ACTION)
@@ -117,8 +107,8 @@ def breakdown() -> PlanBreakdown:
 
 
 @concept(Concept.ACTION)
-def all_customers() -> list[MaskedCustomer]:
-    return [mask_row(row) for row in read_all()]
+def all_customers() -> list[VisibleCustomer]:
+    return [visible(row) for row in read_all()]
 
 
 def describe_breakdown() -> str:
@@ -145,7 +135,7 @@ def registry_context(limit: int = 50) -> str:
     rows = all_customers()
     if not rows:
         return "The customer registry is empty."
-    lines = [describe_breakdown(), "", "Customers (contact details are masked):"]
+    lines = [describe_breakdown(), "", "Customers (phone numbers are not available):"]
     lines.extend(f"  - {row.as_line()}" for row in rows[:limit])
     if len(rows) > limit:
         lines.append(f"  ... and {len(rows) - limit} more")
