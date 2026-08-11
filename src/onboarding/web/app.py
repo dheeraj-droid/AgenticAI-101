@@ -22,7 +22,13 @@ from onboarding.core.llm import llm_spec
 from onboarding.core.mailer import allowlist, smtp_configured, support_address
 from onboarding.core.registry import registry_path
 from onboarding.web import service
-from onboarding.web.models import ChatRequest, ChatResponse, OnboardRequest, OnboardResponse
+from onboarding.web.models import (
+    ChatRequest,
+    ChatResponse,
+    OnboardRequest,
+    OnboardResponse,
+    Stats,
+)
 
 
 def create_app(*, allow_send: bool = False) -> FastAPI:
@@ -58,6 +64,11 @@ def create_app(*, allow_send: bool = False) -> FastAPI:
             },
             "registry_path": str(registry_path()),
         }
+
+    @app.get("/api/stats", response_model=Stats)
+    def stats() -> Stats:
+        """The registry at a glance. Read-only, and recomputed on every call."""
+        return service.stats()
 
     @app.post("/api/onboard", response_model=OnboardResponse)
     async def onboard(request: OnboardRequest) -> OnboardResponse:

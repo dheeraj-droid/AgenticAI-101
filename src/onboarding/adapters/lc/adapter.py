@@ -64,23 +64,29 @@ class LangChainAdapter:
         # Perception and planning are policy, not agent discretion: they run the
         # same way here as in the two graphs, which is what keeps the
         # deterministic half of the output identical across frameworks.
+        steps.trace(state, "perceive", "step", "policy, not agent discretion")
         state = steps.plan(steps.perceive(state, sink), sink)
+        steps.trace(state, "plan", "step")
 
         if state.must_escalate():
+            steps.trace(state, "escalate", "step")
             state = steps.escalate(state, sink)
             state = steps.notify_already_registered(state, sink, allow_send=self.allow_send)
             return steps.finalize(state, sink)
 
         state = await self._draft_with_agent(state, sink)
         state = await steps.act_build_tasks(state, sink, llm=LangChainLlmCaller())
+        steps.trace(state, "reflect", "step")
         state = steps.reflect(state, sink)
 
         if steps.needs_repair(state):
+            steps.trace(state, "repair", "step")
             state = await steps.repair_email(state, LangChainLlmCaller(), sink)
             state = steps.reflect(state, sink)
         if steps.should_escalate(state):
             state = steps.escalate(state, sink)
         else:
+            steps.trace(state, "deliver", "step")
             state = steps.register_customer(state, sink)
             state = steps.send_notifications(state, sink, allow_send=self.allow_send)
 
@@ -98,6 +104,10 @@ class LangChainAdapter:
         finally:
             tools.set_current_state(None)
 
+        steps.trace(state, "create_agent", "agent", "one loop, tool order chosen at runtime")
+        for name in _tool_call_names(result):
+            steps.trace(state, name, "tool", "the agent decided to call this")
+
         draft = _extract_draft(result)
         state.llm_calls += 1
         for ref in prompt_refs:
@@ -111,7 +121,7 @@ class LangChainAdapter:
             "email_drafted",
             subject=state.email.subject,
             word_count=state.email.word_count,
-            tool_calls=_count_tool_calls(result),
+            tool_calls=len(_tool_call_names(result)),
         )
         return state
 
@@ -145,5 +155,17 @@ def _extract_draft(result: dict[str, Any]) -> EmailDraft:
     raise ValueError("the LangChain agent returned no usable email draft")
 
 
-def _count_tool_calls(result: dict[str, Any]) -> int:
-    return sum(len(getattr(m, "tool_calls", []) or []) for m in result.get("messages") or [])
+def _tool_call_names(result: dict[str, Any]) -> list[str]:
+    """The tools the agent actually called, in order.
+
+    This is the whole evidence that LangChain ran: nobody wrote this sequence
+    down, the agent picked it, and it can differ between two runs of the same
+    record. A graph cannot produce a list like this.
+    """
+    names: list[str] = []
+    for message in result.get("messages") or []:
+        for call in getattr(message, "tool_calls", None) or []:
+            name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
+            if name:
+                names.append(str(name))
+    return names

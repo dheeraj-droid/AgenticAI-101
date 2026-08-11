@@ -57,8 +57,15 @@ uv run onboarding serve             # http://127.0.0.1:8000
 
 One tab per framework. Fill in the customer once, then run it through whichever
 agent you like — each tab keeps its own result and its own chat, so you can flip
-between them and compare. The page shows every message the run produced **and
-whether it was actually transmitted**, the task list, and what was masked.
+between them and compare. A strip across the top counts the registry: how many
+customers, how many on each plan, how many tasks are done.
+
+Each result shows **what that framework actually executed** — MAF lists the
+typed executors its edges routed through, LangGraph lists the graph nodes it
+entered, LangChain lists the tools its agent chose for itself at runtime, and
+CrewAI lists its two agents and the task each of them ran. Same record, same
+decision, four visibly different routes. That is the answer to "is this
+framework really being used?" — it is not a label, it is a recording.
 
 **Submit the same customer twice.** The second run takes the duplicate branch:
 no registration, no model call, and a plain "you already have an account" note
@@ -78,23 +85,36 @@ what is their phone number?      ← it does not have one, and says so
 add a customer called Bob         ← it cannot write, and says so
 ```
 
-### 4. Real mail (optional)
+### 4. Real mail with Gmail
+
+Gmail needs an **App Password**, not your account password: turn on 2-Step
+Verification, then generate one at
+[myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
+Paste it with the spaces removed.
 
 ```bash
 # in .env
 SMTP_HOST=smtp.gmail.com
-SMTP_USER=you@gmail.com
+SMTP_PORT=587
+SMTP_USER=dheerajreddy035@gmail.com
 SMTP_PASSWORD=<16-char App Password, spaces removed>
-ONBOARDING_FROM_EMAIL=you@gmail.com
-ONBOARDING_SUPPORT_EMAIL=you+support@gmail.com
-ONBOARDING_ALLOWED_RECIPIENTS=you@gmail.com     # nothing is sent to anyone else
+ONBOARDING_FROM_EMAIL=dheerajreddy035@gmail.com
+ONBOARDING_SUPPORT_EMAIL=dheerajreddy035@gmail.com
+ONBOARDING_ALLOWED_RECIPIENTS=*
 
 uv run onboarding serve --send
 ```
 
-Use your own address in the form. Mail to anything not on
-`ONBOARDING_ALLOWED_RECIPIENTS` is refused, and the page tells you it was
-refused rather than implying it went out. See [Real mail](#real-mail).
+`ONBOARDING_ALLOWED_RECIPIENTS=*` is the demo setting: the welcome email really
+goes to **whatever address was typed into the form**. That is what you want for
+a live demo and it is worth being clear-eyed about — a mistyped address reaches
+a real stranger's inbox and cannot be recalled. The page shows an amber
+*"sending to any address"* badge the whole time it is on.
+
+To be careful instead, list the addresses:
+`ONBOARDING_ALLOWED_RECIPIENTS=you@gmail.com,someone@else.com`. Anything else
+still lands in the outbox, and the page says plainly that it was refused rather
+than implying it went out.
 
 ### The same thing in the terminal
 
@@ -122,7 +142,7 @@ uv run onboarding registry show          # the CSV, phone numbers masked
 uv run onboarding outbox                 # every message produced
 uv run onboarding compare                # all four, side by side
 uv run onboarding concepts               # every principle → the code that implements it
-uv run pytest                            # 527 tests, no API key required
+uv run pytest                            # 535 tests, no API key required
 ```
 
 ---
@@ -413,6 +433,6 @@ See [`docs/concepts.md`](docs/concepts.md) for the generated table.
 ## Testing
 
 ```bash
-uv run pytest              # 527 model-free tests
+uv run pytest              # 535 model-free tests
 uv run pytest -m llm       # 40 more, needs an endpoint (skips without one)
 ```

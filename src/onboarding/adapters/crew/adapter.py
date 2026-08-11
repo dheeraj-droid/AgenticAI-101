@@ -70,26 +70,32 @@ class CrewAdapter:
         sink = default_sink(run_id, record.record_id, self.name)
         sink.emit("run_started", framework=self.name, company=record.company_name)
 
+        steps.trace(state, "perceive", "step", "policy, not agent discretion")
         state = steps.plan(steps.perceive(state, sink), sink)
+        steps.trace(state, "plan", "step")
 
         if state.must_escalate():
+            steps.trace(state, "escalate", "step")
             state = steps.escalate(state, sink)
             state = steps.notify_already_registered(state, sink, allow_send=self.allow_send)
             return steps.finalize(state, sink)
 
         state = await self._draft_with_crew(state, sink)
         state = await steps.act_build_tasks(state, sink, llm=CrewLlmCaller())
+        steps.trace(state, "reflect", "step")
         state = steps.reflect(state, sink)
 
         # The crew already reviewed itself. We validate again anyway, and repair
         # through the same path as every other adapter — self-review is evidence,
         # not authority.
         if steps.needs_repair(state):
+            steps.trace(state, "repair", "step")
             state = await steps.repair_email(state, CrewLlmCaller(), sink)
             state = steps.reflect(state, sink)
         if steps.should_escalate(state):
             state = steps.escalate(state, sink)
         else:
+            steps.trace(state, "deliver", "step")
             state = steps.register_customer(state, sink)
             state = steps.send_notifications(state, sink, allow_send=self.allow_send)
 
@@ -103,6 +109,8 @@ class CrewAdapter:
         on a worker thread rather than stalling the caller's event loop.
         """
         crew, prompt_refs = build_crew()
+        for agent in crew.agents:
+            steps.trace(state, agent.role, "agent", "own context window")
         tools.set_current_state(state)
         try:
             output = await asyncio.to_thread(
@@ -114,6 +122,10 @@ class CrewAdapter:
             )
         finally:
             tools.set_current_state(None)
+
+        for task_output in getattr(output, "tasks_output", None) or []:
+            steps.trace(state, str(getattr(task_output, "agent", "crew task")), "task",
+                        ", ".join(_tools_used(task_output)))
 
         draft = _extract_draft(output)
         # Two agents, so at least two completions; tool loops add more.
@@ -132,6 +144,16 @@ class CrewAdapter:
             crew_agents=2,
         )
         return state
+
+
+def _tools_used(task_output: Any) -> list[str]:
+    """Which tools a crew task reached for. CrewAI reports these per task."""
+    names: list[str] = []
+    for entry in getattr(task_output, "tools_used", None) or []:
+        name = entry.get("name") if isinstance(entry, dict) else getattr(entry, "name", None)
+        if name:
+            names.append(str(name))
+    return names
 
 
 def _extract_draft(output: Any) -> EmailDraft:
