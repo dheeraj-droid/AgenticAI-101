@@ -41,22 +41,22 @@ def load_record(path: str | Path) -> CustomerRecord:
     return CustomerRecord.model_validate_json(Path(path).read_text())
 
 
-def get_adapter(framework: str) -> OnboardingAdapter:
+def get_adapter(framework: str, *, allow_send: bool = False) -> OnboardingAdapter:
     """Resolve a framework name to its adapter. Imports lazily so that a missing
     optional dependency in one framework never breaks the other two."""
     key = framework.lower()
     if key in ("lg", "langgraph"):
         from onboarding.adapters.lg.adapter import LangGraphAdapter
 
-        return LangGraphAdapter()
+        return LangGraphAdapter(allow_send=allow_send)
     if key in ("lc", "langchain"):
         from onboarding.adapters.lc.adapter import LangChainAdapter
 
-        return LangChainAdapter()
+        return LangChainAdapter(allow_send=allow_send)
     if key in ("maf", "agent-framework", "agent_framework"):
         from onboarding.adapters.maf.adapter import MafAdapter
 
-        return MafAdapter()
+        return MafAdapter(allow_send=allow_send)
     raise ValueError(f"unknown framework {framework!r}; expected one of: maf, langchain, langgraph")
 
 

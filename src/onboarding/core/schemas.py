@@ -16,6 +16,10 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 Tier = Literal["starter", "growth", "enterprise"]
 Region = Literal["us", "eu", "apac", "other"]
+# The customer-facing plan name, as it appears in the registry and in Q&A.
+# `tier` drives onboarding policy; `plan` is what the business calls the product.
+PlanName = Literal["free", "pro", "pro+"]
+TIER_TO_PLAN: dict[str, PlanName] = {"starter": "free", "growth": "pro", "enterprise": "pro+"}
 Severity = Literal["error", "warning", "info"]
 RunStatus = Literal[
     "completed",
@@ -85,10 +89,18 @@ class CustomerRecord(BaseModel):
     signup_notes: str = ""
     requested_go_live: date | None = None
     source_system: str = "manual"
+    # Optional: when absent it is derived from `tier`, so every existing record
+    # keeps working and no fixture needs editing.
+    plan: PlanName | None = None
 
     @property
     def all_contacts(self) -> list[Contact]:
         return [self.primary_contact, *self.additional_contacts]
+
+    @property
+    def effective_plan(self) -> PlanName:
+        """The plan this customer is on, explicit or derived from their tier."""
+        return self.plan or TIER_TO_PLAN[self.tier]
 
 
 # ---------------------------------------------------------------------------
@@ -306,6 +318,7 @@ class DeterministicOutcome(BaseModel):
     plan_goals: list[str]
     rule_task_ids: list[str]
     violation_rule_ids: list[str]
+    registered: bool
     # Deliberately NOT included: prompt_refs. Each framework legitimately uses a
     # different prompt set (the graphs render welcome_email; the LangChain agent
     # renders agent_instructions and drives tools), so requiring them to match
@@ -340,6 +353,9 @@ class OnboardingResult(BaseModel):
     audit_log_path: str = ""
     audit_event_ids: list[str] = Field(default_factory=list)
 
+    registered: bool = False
+    mail_outbox: list[str] = Field(default_factory=list)
+
     resume_supported: bool = False
     resume_token: str | None = None
 
@@ -361,6 +377,7 @@ class OnboardingResult(BaseModel):
             plan_goals=[s.goal for s in self.plan.steps],
             rule_task_ids=sorted(t.task_id for t in self.tasks if t.origin == "rule"),
             violation_rule_ids=sorted(v.rule_id for v in self.reflection.violations),
+            registered=self.registered,
         )
 
 
@@ -383,13 +400,15 @@ class OnboardingState(BaseModel):
     record: CustomerRecord
 
     perception: Perception | None = None
-    plan: Plan | None = None
+    plan: Plan | None = None  # the least-to-most work plan, not the customer's plan
     risk: RiskAssessment | None = None
     email: WelcomeEmail | None = None
     tasks: list[OnboardingTask] = Field(default_factory=list)
     reflection: Reflection | None = None
 
     approval_decision: Literal["approve", "reject"] | None = None
+    registered: bool = False
+    mail_outbox: list[str] = Field(default_factory=list)
     status: RunStatus = "completed"
     escalation_queue: list[str] = Field(default_factory=list)
     prompt_refs: list[PromptRef] = Field(default_factory=list)

@@ -9,7 +9,7 @@ three times over a **single shared core**:
 | Shape | executor graph + tools | one tool-using agent | multi-step graph |
 | Branching | 2 switch-case groups + conditional edges | none (agent decides at runtime) | 3 conditional branch points |
 | HITL | `ctx.request_info()` | blocks, cannot resume | `interrupt()` |
-| State | `FileCheckpointStorage` | **none, by design** | `SqliteSaver` |
+| State | `FileCheckpointStorage` | **none, by design** | `AsyncSqliteSaver` |
 | Resume across processes | yes | **no** | yes |
 
 Because all three call the same schemas, rules and pipeline, any difference in
@@ -28,7 +28,7 @@ the entire point.
 ```bash
 uv sync --extra dev --extra nlp     # nlp = the spaCy model Presidio uses
 uv run onboarding doctor            # check the environment, no model needed
-uv run pytest                       # 229 tests, no API key required
+uv run pytest                       # 301 tests, no API key required
 ```
 
 ### Point it at a model (free and local)
@@ -90,6 +90,76 @@ checkpointer and no thread to return to. That is the stateless/stateful
 distinction made concrete rather than described.
 
 ---
+
+## Registering the customer, and talking to the agent afterwards
+
+The full workflow is: **validate → check for a duplicate → register → mail the
+team and the customer → answer questions about them.**
+
+```bash
+uv run onboarding run --framework langgraph --record fixtures/customers/valid_smb.json
+uv run onboarding registry show          # the CSV table, contact details masked
+uv run onboarding outbox                 # the mail that was produced
+uv run onboarding chat --framework maf   # ask questions about who's onboarded
+```
+
+### The registry
+
+A plain CSV at `.runs/registry.csv` — `name, email, phone, plan`, plus the
+bookkeeping to trace a row back to its run. Open it in Excel whenever you like;
+writes take an exclusive lock and re-check inside it, so a run cannot clobber
+another. `onboarding registry export --out anywhere.csv` copies it out.
+
+Plans are **free, pro, pro+**. A record can set `plan` explicitly; otherwise it
+derives from `tier` (starter→free, growth→pro, enterprise→pro+), so the
+onboarding policy keeps speaking tiers while the business speaks plans.
+
+**Duplicate detection** rides the machinery that already exists rather than
+adding a branch. Same `record_id` or email is a *blocking error* → the run
+escalates and never re-registers. Same company or shared email domain is a
+*warning* → it routes to the human approval gate, because a second team at the
+same company is a legitimate thing to onboard and that call belongs to a person.
+
+A customer is written to the registry **only** on a run that completed cleanly:
+blocked, rejected, escalated and failed-reflection runs all leave the table
+untouched, checked explicitly rather than inferred from call order.
+
+### Mail
+
+Nothing is transmitted by default. Both messages are written as real `.eml`
+files to `.runs/outbox/` and logged. Actually sending needs `SMTP_HOST`, *and*
+the `--send` flag, *and* — for the customer-facing message only — a record that
+cleared human approval. The fixtures contain realistic-looking addresses, so a
+demo run must not be able to email a real person.
+
+The welcome email is drafted against `<PERSON_1>` placeholders; the real values
+are substituted back in deterministic code at the last moment before delivery.
+
+### Chat — read-only, all three frameworks
+
+```bash
+uv run onboarding chat -f langchain                     # a conversation
+uv run onboarding chat -f maf --ask "how many are on pro+?"
+uv run onboarding chat -f langgraph -r fixtures/customers/valid_smb.json
+```
+
+Same system prompt, same tools, three orchestrations: LangChain's native agent
+loop, a LangGraph `agent ↔ tools` graph, and a MAF `Agent` with the tools
+attached.
+
+Two properties are enforced by tests, not by prompt wording:
+
+- **The model cannot write.** Every tool it can reach is a pure query. There is
+  no path from any tool to the registry's write path, the mailer or the approval
+  store — `test_chat_readonly.py` walks each tool's call graph and fails the
+  build if one appears. Ask it to add a customer and it will tell you it can't.
+- **Contact details stay masked.** Names, companies and plans reach the model as
+  ordinary business facts. Emails and phones arrive as `d***@b***.com` and
+  `+44***42`, so "how many people are on the pro plan?" is answerable while a
+  leaked phone number is not possible.
+
+Counting is done in Python and handed to the model as a finished sentence —
+tallying rows is exactly what a small local model gets subtly wrong.
 
 ## Business rules are enforced, not requested
 
@@ -167,13 +237,18 @@ src/onboarding/
     pii.py           Presidio + regex fallback
     injection.py     prompt-injection defenses
     discounts.py     the no-fabricated-discounts guarantee
-    steps.py         the pipeline: perceive / plan / act / reflect
+    registry.py      the CSV customer table (queries vs the single write path)
+    qa.py            read-only question answering, masking applied
+    mailer.py        outbox by default, SMTP strictly opt-in
+    steps.py         perceive / plan / act / reflect / register / notify
     hitl.py          pause, log, stop, resume
   adapters/
     maf/           Microsoft Agent Framework workflow + tools
     lc/            the single LangChain agent
     lg/            the LangGraph graph
-  cli/           doctor, run, resume, pending, compare, concepts, prompts, audit
+  chat/          the read-only Q&A agent, in all three frameworks
+  cli/           doctor, run, resume, pending, chat, registry, outbox,
+                 compare, concepts, prompts, audit
 ```
 
 Every adapter node is a wrapper: unpack state → call one `core` function → pack
@@ -211,6 +286,6 @@ See [`docs/concepts.md`](docs/concepts.md) for the generated table.
 ## Testing
 
 ```bash
-uv run pytest              # 229 model-free tests
-uv run pytest -m llm       # 16 more, needs an endpoint (skips without one)
+uv run pytest              # 301 model-free tests
+uv run pytest -m llm       # 38 more, needs an endpoint (skips without one)
 ```

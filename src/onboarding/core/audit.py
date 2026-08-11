@@ -25,6 +25,7 @@ from onboarding.core.config import paths
 EventType = Literal[
     "run_started",
     "record_validated",
+    "duplicate_checked",
     "pii_masked",
     "injection_scanned",
     "risk_assessed",
@@ -37,6 +38,10 @@ EventType = Literal[
     "rule_violation",
     "approval_required",
     "approval_decided",
+    "customer_registered",
+    "registration_skipped",
+    "mail_sent",
+    "mail_skipped",
     "escalated",
     "run_finished",
     "run_failed",

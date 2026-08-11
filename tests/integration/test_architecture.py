@@ -17,6 +17,13 @@ ADAPTERS = SRC / "adapters"
 # Statements allowed in an adapter function beyond the call into core.
 MAX_ADAPTER_STATEMENTS = 12
 
+# Graph builders are exempt from the statement count: they are declarative
+# wiring, and their length scales with the number of nodes, which is exactly the
+# thing we want to be free to grow. They are NOT exempt from
+# `test_adapters_define_no_rules` below, so they still cannot contain a
+# threshold, a regex or any other business rule.
+GRAPH_BUILDERS = {"build_workflow", "build_graph", "build_agent"}
+
 
 def _python_files(root: Path) -> list[Path]:
     return sorted(p for p in root.rglob("*.py") if "__pycache__" not in p.parts)
@@ -33,11 +40,52 @@ def test_adapters_stay_thin(path: Path) -> None:
     """Adapter functions wire frameworks together; they do not compute business rules."""
     tree = ast.parse(path.read_text())
     for func in _functions(tree):
+        if func.name in GRAPH_BUILDERS:
+            continue
         statements = [n for n in func.body if not isinstance(n, ast.Expr | ast.Pass)]
         assert len(statements) <= MAX_ADAPTER_STATEMENTS, (
             f"{path.name}:{func.name} has {len(statements)} statements — "
             "business logic belongs in onboarding.core"
         )
+
+
+@pytest.mark.parametrize("path", _python_files(ADAPTERS), ids=lambda p: p.name)
+def test_graph_builders_only_wire(path: Path) -> None:
+    """A graph builder may be long, but every call it makes must be wiring.
+
+    This is what keeps the statement-count exemption honest: the builder can add
+    nodes and edges, and can name core predicates, but it cannot compute
+    anything itself.
+    """
+    allowed_calls = {
+        # framework wiring
+        "add_node", "add_edge", "add_conditional_edges", "add_switch_case_edge_group",
+        "add_chain", "add_fan_in_edges", "add_fan_out_edges", "build", "compile",
+        "StateGraph", "WorkflowBuilder", "Case", "Default", "create_agent", "tool",
+        # local construction
+        "IngestExecutor", "PlanExecutor", "RiskGateExecutor", "ApprovalExecutor",
+        "DraftEmailExecutor", "TaskListExecutor", "ReflectExecutor", "RepairExecutor",
+        "DeliverExecutor", "EscalateExecutor", "FinalizeExecutor",
+        # prompt/model plumbing
+        "render", "render_system_prompt", "library", "make_langchain_model", "make_maf_client",
+    }
+    tree = ast.parse(path.read_text())
+    for func in _functions(tree):
+        if func.name not in GRAPH_BUILDERS:
+            continue
+        # Walk the body only — ast.walk(func) would also visit the @concept
+        # decorator, which is documentation, not wiring.
+        for statement in func.body:
+            for node in ast.walk(statement):
+                if not isinstance(node, ast.Call):
+                    continue
+                name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+                if name is None or name.startswith("_"):
+                    continue
+                assert name in allowed_calls, (
+                    f"{path.name}:{func.name} calls {name!r} — a graph builder may only "
+                    "wire nodes and edges together"
+            )
 
 
 @pytest.mark.parametrize("path", _python_files(ADAPTERS), ids=lambda p: p.name)
