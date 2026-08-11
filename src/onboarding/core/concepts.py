@@ -15,7 +15,7 @@ from typing import TypeVar
 
 
 class Concept(StrEnum):
-    """The principles the three implementations are meant to show."""
+    """The principles the four implementations are meant to show."""
 
     # --- agent loop -------------------------------------------------------
     PERCEPTION = "Agent loop: Perception"
@@ -61,7 +61,7 @@ class ConceptBinding:
     concept: Concept
     module: str
     qualname: str
-    layer: str  # "core" | "maf" | "langchain" | "langgraph"
+    layer: str  # "core" | "maf" | "langchain" | "langgraph" | "crew"
 
     @property
     def location(self) -> str:
@@ -80,6 +80,8 @@ def _layer_for(module: str) -> str:
         return "langchain"
     if ".adapters.lg" in module:
         return "langgraph"
+    if ".adapters.crew" in module:
+        return "crew"
     return "core"
 
 
@@ -130,5 +132,6 @@ def load_all_layers() -> None:
         "onboarding.adapters.lg.graph",
         "onboarding.adapters.maf.workflow",
         "onboarding.adapters.lc.agent",
+        "onboarding.adapters.crew.crew",
     ):
         importlib.import_module(mod)
