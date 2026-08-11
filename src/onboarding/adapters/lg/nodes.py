@@ -9,25 +9,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from langgraph.types import interrupt
-
 from onboarding.adapters.lg.state import GraphState
 from onboarding.core import steps
 from onboarding.core.audit import default_sink
 from onboarding.core.concepts import Concept, concept
-from onboarding.core.hitl import ResumeIndex, apply_decision, record_approval_required
 from onboarding.core.llm import LlmCaller
-from onboarding.core.schemas import ApprovalDecision, OnboardingState
+from onboarding.core.schemas import OnboardingState
 
 # Set by the adapter before each run; the graph is otherwise pure.
-_CONTEXT: dict[str, Any] = {"llm": None, "record_path": None, "allow_send": False}
+_CONTEXT: dict[str, Any] = {"llm": None, "allow_send": False}
 
 
-def set_context(
-    *, llm: LlmCaller | None, record_path: str | None = None, allow_send: bool = False
-) -> None:
+def set_context(*, llm: LlmCaller | None, allow_send: bool = False) -> None:
     _CONTEXT["llm"] = llm
-    _CONTEXT["record_path"] = record_path
     _CONTEXT["allow_send"] = allow_send
 
 
@@ -80,39 +74,6 @@ def risk_gate(payload: GraphState) -> GraphState:
     return payload
 
 
-@concept(Concept.HUMAN_IN_THE_LOOP, Concept.DURABLE_STATE)
-def human_approval(payload: GraphState) -> GraphState:
-    """Pause the run, log the request, and stop until a human decides.
-
-    ``interrupt()`` suspends the graph and persists everything to the
-    SqliteSaver, so the decision can arrive from a completely different process.
-    """
-    state = _load(payload)
-    record_approval_required(
-        state,
-        _sink(state),
-        thread_id=state.run_id,
-        record_path=_CONTEXT["record_path"],
-        index=ResumeIndex(),
-    )
-    decision = interrupt(
-        {
-            "kind": "approval_required",
-            "run_id": state.run_id,
-            "company": state.record.company_name,
-            "reasons": state.risk.reasons if state.risk else [],
-        }
-    )
-    # The resume payload carries the whole decision, not just the verdict, so the
-    # approver's identity and note survive the process boundary into the audit log.
-    if isinstance(decision, dict):
-        resolved = ApprovalDecision.model_validate(decision)
-    else:
-        resolved = ApprovalDecision(decision=str(decision))  # type: ignore[arg-type]
-    state = apply_decision(state, resolved, _sink(state))
-    return _dump(state, decision=resolved.decision)
-
-
 @concept(Concept.ACTION)
 async def draft_email(payload: GraphState) -> GraphState:
     state = _load(payload)
@@ -140,7 +101,9 @@ async def repair(payload: GraphState) -> GraphState:
 @concept(Concept.CONFIDENCE_FALLBACK)
 def escalate(payload: GraphState) -> GraphState:
     state = _load(payload)
-    return _dump(steps.escalate(state, _sink(state)))
+    sink = _sink(state)
+    state = steps.escalate(state, sink)
+    return _dump(steps.notify_already_registered(state, sink, allow_send=_CONTEXT["allow_send"]))
 
 
 @concept(Concept.ACTION)
@@ -154,10 +117,7 @@ def deliver(payload: GraphState) -> GraphState:
 
 @concept(Concept.AUDIT_LOGGING)
 def finalize(payload: GraphState) -> GraphState:
-    state = _load(payload)
-    if state.status == "blocked_awaiting_approval":
-        state.status = "completed"
-    return _dump(state)
+    return _dump(_load(payload))
 
 
 NODES = (
@@ -165,7 +125,6 @@ NODES = (
     plan,
     rewrite_query,
     risk_gate,
-    human_approval,
     draft_email,
     build_tasks,
     reflect,
@@ -179,20 +138,10 @@ NODES = (
 # --- routing (shared predicates, not re-implemented) -----------------------
 
 
-@concept(Concept.CONDITIONAL_BRANCHING, Concept.HUMAN_IN_THE_LOOP)
-def route_after_risk(payload: GraphState) -> str:
-    """One-of-three routing. Same order of tests as the MAF switch-case group."""
-    state = _load(payload)
-    if state.has_blocking_errors():
-        return "escalate"
-    if state.requires_human_approval():
-        return "approve_needed"
-    return "draft"
-
-
 @concept(Concept.CONDITIONAL_BRANCHING)
-def route_after_decision(payload: GraphState) -> str:
-    return "approve" if _load(payload).approval_decision == "approve" else "reject"
+def route_after_risk(payload: GraphState) -> str:
+    """Can this record be onboarded? Same predicate as the MAF switch-case group."""
+    return "escalate" if _load(payload).must_escalate() else "draft"
 
 
 @concept(Concept.CONDITIONAL_BRANCHING, Concept.CONFIDENCE_FALLBACK)

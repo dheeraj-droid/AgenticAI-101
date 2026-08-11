@@ -15,14 +15,14 @@ from onboarding.core.concepts import Concept, concept
 
 @dataclass(frozen=True, slots=True)
 class Thresholds:
-    """Numeric policy. Changing a value here changes all three frameworks at once."""
+    """Numeric policy. Changing a value here changes all four frameworks at once."""
 
-    # A record at or above this ACV needs a human to sign off the welcome email.
+    # A record at or above this ACV is treated as high risk.
     HIGH_VALUE_ACV_USD: Decimal = Decimal("100000")
-    # Tiers that always need sign-off regardless of value.
+    # Tiers that are high risk regardless of value.
     ENTERPRISE_TIERS: tuple[str, ...] = ("enterprise",)
-    # A validation warning is enough to require approval (conservative default).
-    WARNING_TRIGGERS_APPROVAL: bool = True
+    # A validation warning counts toward the risk score (conservative default).
+    WARNING_IS_RISK: bool = True
     # Below this, we do not ship the draft — it goes to the escalation queue.
     MIN_CONFIDENCE: float = 0.62
     # How many times reflection may ask for a repair before giving up.
@@ -146,39 +146,36 @@ PRODUCT_TASKS: dict[str, TaskTemplate] = {
 REMEDIATION_TASK = TaskTemplate(
     "fix-record-data", "Correct the customer record and re-run onboarding", "ops", 1, "p0"
 )
-APPROVAL_TASK = TaskTemplate(
-    "obtain-human-approval", "Obtain human approval for the welcome email", "csm", 1, "p0"
-)
-
 
 @dataclass(frozen=True, slots=True)
-class ApprovalTrigger:
-    """Why a record needs a human. Kept as data so the reasons are comparable."""
+class RiskTrigger:
+    """Why a record scored as it did. Kept as data so the reasons are comparable."""
 
     code: str
     reason: str
 
 
 @concept(Concept.POLICY_CONSTRAINED, Concept.AUTONOMOUS_VS_ASSISTIVE)
-def approval_triggers(
+def risk_triggers(
     *,
     tier: str,
     annual_contract_value_usd: Decimal,
     has_injection_block: bool,
     has_validation_warning: bool,
     has_validation_error: bool,
-) -> list[ApprovalTrigger]:
-    """The one place that decides whether a run needs human sign-off.
+) -> list[RiskTrigger]:
+    """The one place that decides how risky a record is.
 
-    Both the MAF switch-case group and the LangGraph conditional edge route on
-    the result of this function, so the two graphs cannot drift apart.
+    The score this feeds drives the planning strategy and the confidence
+    threshold. Whether a record is *stopped* is a separate, narrower question —
+    see ``OnboardingState.must_escalate``.
     """
-    triggers: list[ApprovalTrigger] = []
+    triggers: list[RiskTrigger] = []
     if tier in RULES.ENTERPRISE_TIERS:
-        triggers.append(ApprovalTrigger("TIER", f"tier '{tier}' always requires sign-off"))
+        triggers.append(RiskTrigger("TIER", f"tier '{tier}' is handled as high risk"))
     if annual_contract_value_usd >= RULES.HIGH_VALUE_ACV_USD:
         triggers.append(
-            ApprovalTrigger(
+            RiskTrigger(
                 "VALUE",
                 f"contract value {annual_contract_value_usd} >= threshold "
                 f"{RULES.HIGH_VALUE_ACV_USD}",
@@ -186,12 +183,12 @@ def approval_triggers(
         )
     if has_injection_block:
         triggers.append(
-            ApprovalTrigger("INJECTION", "a prompt-injection attempt was detected in free text")
+            RiskTrigger("INJECTION", "a prompt-injection attempt was detected in free text")
         )
     if has_validation_error:
-        triggers.append(ApprovalTrigger("VALIDATION_ERROR", "the record has blocking errors"))
-    elif has_validation_warning and RULES.WARNING_TRIGGERS_APPROVAL:
-        triggers.append(ApprovalTrigger("VALIDATION_WARNING", "the record has validation warnings"))
+        triggers.append(RiskTrigger("VALIDATION_ERROR", "the record has blocking errors"))
+    elif has_validation_warning and RULES.WARNING_IS_RISK:
+        triggers.append(RiskTrigger("VALIDATION_WARNING", "the record has validation warnings"))
     return triggers
 
 
@@ -201,11 +198,7 @@ class Capabilities:
 
     multi_step: bool
     conditional_branching: bool
-    hitl_pause: bool
-    durable_resume: bool
     tools: bool
     agent_count: str  # "single" | "multi"
-    statefulness: str  # "stateless" | "stateful"
-    checkpoint_backend: str
     notes: str = ""
     extras: dict[str, str] = field(default_factory=dict)

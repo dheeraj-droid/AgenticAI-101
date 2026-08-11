@@ -2,9 +2,9 @@
 
 Adapters contain **no business logic**. Each node/executor/tool body unpacks
 state, calls exactly one ``onboarding.core`` function, and packs the result back.
-``tests/integration/test_adapter_thinness.py`` enforces that with an AST walk —
-that is what makes the three implementations genuinely comparable rather than
-three separate programs that happen to agree.
+``tests/integration/test_architecture.py`` enforces that with an AST walk — that
+is what makes the four implementations genuinely comparable rather than four
+separate programs that happen to agree.
 """
 
 from __future__ import annotations
@@ -13,12 +13,7 @@ from pathlib import Path
 from typing import ClassVar, Protocol, runtime_checkable
 
 from onboarding.core.rules import Capabilities
-from onboarding.core.schemas import (
-    ApprovalDecision,
-    CustomerRecord,
-    Framework,
-    OnboardingResult,
-)
+from onboarding.core.schemas import CustomerRecord, Framework, OnboardingResult
 
 
 @runtime_checkable
@@ -30,10 +25,6 @@ class OnboardingAdapter(Protocol):
 
     async def run(self, record: CustomerRecord, *, run_id: str, record_path: str | None = None) -> OnboardingResult:
         """Run the assistant end to end for one record."""
-        ...
-
-    async def resume(self, run_id: str, decision: ApprovalDecision) -> OnboardingResult:
-        """Resume a run that paused at the human-approval checkpoint."""
         ...
 
 
@@ -57,7 +48,13 @@ def get_adapter(framework: str, *, allow_send: bool = False) -> OnboardingAdapte
         from onboarding.adapters.maf.adapter import MafAdapter
 
         return MafAdapter(allow_send=allow_send)
-    raise ValueError(f"unknown framework {framework!r}; expected one of: maf, langchain, langgraph")
+    if key in ("crew", "crewai"):
+        from onboarding.adapters.crew.adapter import CrewAdapter
+
+        return CrewAdapter(allow_send=allow_send)
+    raise ValueError(
+        f"unknown framework {framework!r}; expected one of: maf, langchain, langgraph, crew"
+    )
 
 
-FRAMEWORKS: tuple[Framework, ...] = ("maf", "langchain", "langgraph")
+FRAMEWORKS: tuple[Framework, ...] = ("maf", "langchain", "langgraph", "crew")

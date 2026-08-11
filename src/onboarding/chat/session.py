@@ -1,13 +1,16 @@
-"""One chat interface, three framework implementations.
+"""One chat interface, four framework implementations.
 
 Same system prompt, same read-only tools — only the orchestration differs, which
 is the whole point of the comparison:
 
 * **LangChain** — a single ``create_agent`` loop. Conversational by nature.
 * **LangGraph** — a two-node graph (``agent`` ↔ ``tools``) with a message
-  channel and a real checkpointer, so the conversation survives the process.
+  channel, so the tool loop is an explicit cycle rather than an implicit one.
 * **MAF** — an ``Agent`` over ``OpenAIChatCompletionClient`` with the same tools
   attached, driven turn by turn.
+* **CrewAI** — a single ``Agent`` in a one-task crew per question. A crew is
+  built to complete a task and then finish, so unlike the other three it has no
+  native turn loop; history is replayed into each question by hand.
 """
 
 from __future__ import annotations
@@ -21,8 +24,6 @@ from onboarding.core.audit import JsonlAuditSink
 from onboarding.core.concepts import Concept, concept
 from onboarding.core.prompts import library
 from onboarding.core.schemas import CustomerRecord
-
-MASKED_EXAMPLE = "d***@b***.com or +44***42"
 
 
 @concept(Concept.CONTEXT_AWARE_PROMPT, Concept.POLICY_CONSTRAINED)
@@ -39,7 +40,6 @@ def system_prompt(record: CustomerRecord | None = None) -> tuple[str, Any]:
     return library().render(
         "chat_analyst",
         plan_names=", ".join(qa.KNOWN_PLANS),
-        masked_example=MASKED_EXAMPLE,
         current_customer=current,
     )
 
@@ -92,7 +92,7 @@ class LangChainChat:
 
 
 # ---------------------------------------------------------------------------
-# LangGraph — an explicit agent/tools loop with durable history
+# LangGraph — an explicit agent/tools loop
 # ---------------------------------------------------------------------------
 
 
@@ -172,6 +172,71 @@ class MafChat:
 
 
 # ---------------------------------------------------------------------------
+# CrewAI — one agent, one task, one crew per question
+# ---------------------------------------------------------------------------
+
+
+class CrewChat:
+    framework = "crew"
+
+    def __init__(self, record: CustomerRecord | None = None, sink: JsonlAuditSink | None = None):
+        from onboarding.core.telemetry import opt_out
+
+        opt_out()
+
+        from crewai.tools import tool
+
+        from onboarding.core.llm import make_crew_llm
+
+        prompt, self.prompt_ref = system_prompt(record)
+        self._prompt = prompt
+        self._llm = make_crew_llm()
+        self._tools = [tool(fn.__name__)(fn) for fn in READ_ONLY_TOOLS]
+        # A crew is built to finish a task, not to hold a conversation, so the
+        # transcript is carried here and replayed into each question. That is the
+        # cost of the multi-agent model on a conversational workload.
+        self._history: list[Turn] = []
+        self._sink = sink
+
+    @concept(Concept.ACTION, Concept.SINGLE_VS_MULTI_AGENT)
+    async def ask(self, question: str) -> Turn:
+        import asyncio
+
+        from crewai import Agent, Crew, Process, Task
+
+        analyst = Agent(
+            role="Customer registry analyst",
+            goal="Answer questions about onboarded customers using only the tools provided.",
+            backstory=self._prompt,
+            tools=self._tools,
+            llm=self._llm,
+            allow_delegation=False,
+            verbose=False,
+        )
+        task = Task(
+            description=f"{self._transcript()}Answer this question: {question}",
+            expected_output="A short, direct answer grounded in what the tools returned.",
+            agent=analyst,
+        )
+        crew = Crew(agents=[analyst], tasks=[task], process=Process.sequential, verbose=False)
+        output = await asyncio.to_thread(crew.kickoff)
+
+        answer = str(getattr(output, "raw", "") or output).strip()
+        turn = Turn(question=question, answer=answer, tool_calls=_crew_tool_names(output))
+        self._history.append(turn)
+        return turn
+
+    def _transcript(self) -> str:
+        if not self._history:
+            return ""
+        lines = ["Earlier in this conversation:"]
+        for turn in self._history[-5:]:
+            lines.append(f"  Q: {turn.question}")
+            lines.append(f"  A: {turn.answer}")
+        return "\n".join(lines) + "\n\n"
+
+
+# ---------------------------------------------------------------------------
 
 
 def build_session(
@@ -184,7 +249,11 @@ def build_session(
         return LangGraphChat(record, sink)
     if key in ("maf", "agent-framework", "agent_framework"):
         return MafChat(record, sink)
-    raise ValueError(f"unknown framework {framework!r}; expected maf, langchain or langgraph")
+    if key in ("crew", "crewai"):
+        return CrewChat(record, sink)
+    raise ValueError(
+        f"unknown framework {framework!r}; expected maf, langchain, langgraph or crew"
+    )
 
 
 def _last_text(messages: list[Any]) -> str:
@@ -217,6 +286,21 @@ def _tool_names(messages: list[Any]) -> list[str]:
             name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
             if name:
                 names.append(name)
+    return names
+
+
+def _crew_tool_names(output: Any) -> list[str]:
+    """Pull tool names out of a CrewOutput.
+
+    CrewAI reports tool usage per task rather than per message, so the names come
+    off ``tasks_output`` instead of a message list.
+    """
+    names: list[str] = []
+    for task_output in getattr(output, "tasks_output", None) or []:
+        for entry in getattr(task_output, "tools_used", None) or []:
+            name = entry.get("name") if isinstance(entry, dict) else getattr(entry, "name", None)
+            if name:
+                names.append(str(name))
     return names
 
 

@@ -41,6 +41,28 @@ class MafLlmCaller:
         return extract_json_object(str(response.text or ""))
 
 
+class CrewLlmCaller:
+    """Uses ``crewai.LLM``.
+
+    CrewAI's LLM is synchronous, so the call is pushed to a worker thread rather
+    than blocking the loop the adapter runs on.
+    """
+
+    def __init__(self, model: Any | None = None) -> None:
+        from onboarding.core.llm import make_crew_llm
+
+        self._model = model or make_crew_llm()
+
+    async def complete_json(self, *, system: str, user: str) -> dict[str, Any]:
+        import asyncio
+
+        text = await asyncio.to_thread(
+            self._model.call,
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        )
+        return extract_json_object(str(text or ""))
+
+
 def _text_of(content: Any) -> str:
     """LangChain message content is str or a list of content blocks."""
     if isinstance(content, str):

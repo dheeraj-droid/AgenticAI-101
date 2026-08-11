@@ -3,42 +3,32 @@
 One executor per pipeline phase. Each ``@handler`` unpacks the state, calls one
 ``core.steps`` function and forwards the result — no business logic lives here.
 
-State travels as a serialised dict rather than the pydantic model itself so the
-``FileCheckpointStorage`` type allow-list stays small and the checkpoint file is
-plain JSON.
+State travels as a serialised dict rather than the pydantic model itself, so
+every message on an edge is plain JSON and can be logged as-is.
 """
 
 # NOTE: deliberately no `from __future__ import annotations` here.
-# @response_handler validates the ctx parameter using the raw
+# The handler decorators validate the ctx parameter using the raw
 # inspect.signature annotation rather than get_type_hints, so postponed
-# (string) annotations make it reject an otherwise valid WorkflowContext.
+# (string) annotations make them reject an otherwise valid WorkflowContext.
 from typing import Any, Never
 
-from agent_framework import Executor, WorkflowContext, handler, response_handler
+from agent_framework import Executor, WorkflowContext, handler
 
 from onboarding.core import steps
 from onboarding.core.audit import default_sink
 from onboarding.core.concepts import Concept, concept
-from onboarding.core.hitl import ResumeIndex, apply_decision, record_approval_required
 from onboarding.core.llm import LlmCaller
-from onboarding.core.schemas import (
-    ApprovalDecision,
-    ApprovalRequest,
-    OnboardingResult,
-    OnboardingState,
-)
+from onboarding.core.schemas import OnboardingResult, OnboardingState
 
 StatePayload = dict[str, Any]
 
 # Set by the adapter before each run.
-_CONTEXT: dict[str, Any] = {"llm": None, "record_path": None, "allow_send": False}
+_CONTEXT: dict[str, Any] = {"llm": None, "allow_send": False}
 
 
-def set_context(
-    *, llm: LlmCaller | None, record_path: str | None = None, allow_send: bool = False
-) -> None:
+def set_context(*, llm: LlmCaller | None, allow_send: bool = False) -> None:
     _CONTEXT["llm"] = llm
-    _CONTEXT["record_path"] = record_path
     _CONTEXT["allow_send"] = allow_send
 
 
@@ -52,11 +42,6 @@ def _dump(state: OnboardingState) -> StatePayload:
 
 def _sink(state: OnboardingState):
     return default_sink(state.run_id, state.record.record_id, state.framework)
-
-
-def _pending_key(run_id: str) -> str:
-    """Workflow-state key holding the state of a run parked at the approval gate."""
-    return f"pending_approval:{run_id}"
 
 
 def _llm() -> LlmCaller:
@@ -104,46 +89,6 @@ class RiskGateExecutor(Executor):
     @concept(Concept.CONDITIONAL_BRANCHING)
     async def gate(self, payload: StatePayload, ctx: WorkflowContext[dict[str, Any]]) -> None:
         await ctx.send_message(payload)
-
-
-class ApprovalExecutor(Executor):
-    """Human-in-the-loop checkpoint.
-
-    ``ctx.request_info`` suspends the workflow and the checkpoint is written to
-    disk, so the decision can arrive from a different process entirely.
-    """
-
-    def __init__(self, id: str = "approval") -> None:
-        super().__init__(id=id)
-
-    @handler
-    @concept(Concept.HUMAN_IN_THE_LOOP, Concept.DURABLE_STATE)
-    async def request_approval(self, payload: StatePayload, ctx: WorkflowContext[dict[str, Any]]) -> None:
-        state = _load(payload)
-        request = record_approval_required(
-            state,
-            _sink(state),
-            checkpoint_id=state.run_id,
-            record_path=_CONTEXT["record_path"],
-            index=ResumeIndex(),
-        )
-        # The response handler only receives the original request, so park the
-        # full state in workflow state — it rides along in the checkpoint and is
-        # still there when a different process resumes the run.
-        ctx.set_state(_pending_key(state.run_id), _dump(state))
-        await ctx.request_info(request, ApprovalDecision, request_id=state.run_id)
-
-    @response_handler
-    @concept(Concept.HUMAN_IN_THE_LOOP)
-    async def on_decision(
-        self,
-        request: ApprovalRequest,
-        response: ApprovalDecision,
-        ctx: WorkflowContext[dict[str, Any]],
-    ) -> None:
-        payload = ctx.get_state(_pending_key(request.run_id))
-        state = _load(payload)
-        await ctx.send_message(_dump(apply_decision(state, response, _sink(state))))
 
 
 class DraftEmailExecutor(Executor):
@@ -216,7 +161,7 @@ class DeliverExecutor(Executor):
 
 
 class EscalateExecutor(Executor):
-    """Terminal: route to the human review queue."""
+    """Terminal: the record could not be onboarded, and says why."""
 
     def __init__(self, id: str = "escalate") -> None:
         super().__init__(id=id)
@@ -226,7 +171,9 @@ class EscalateExecutor(Executor):
     async def escalate(self, payload: StatePayload, ctx: WorkflowContext[Never, OnboardingResult]) -> None:
         state = _load(payload)
         sink = _sink(state)
-        await ctx.yield_output(steps.finalize(steps.escalate(state, sink), sink, resume_token=state.run_id))
+        state = steps.escalate(state, sink)
+        state = steps.notify_already_registered(state, sink, allow_send=_CONTEXT["allow_send"])
+        await ctx.yield_output(steps.finalize(state, sink))
 
 
 class FinalizeExecutor(Executor):
@@ -240,4 +187,4 @@ class FinalizeExecutor(Executor):
     async def finalize(self, payload: StatePayload, ctx: WorkflowContext[Never, OnboardingResult]) -> None:
         state = _load(payload)
         sink = _sink(state)
-        await ctx.yield_output(steps.finalize(state, sink, resume_token=state.run_id))
+        await ctx.yield_output(steps.finalize(state, sink))

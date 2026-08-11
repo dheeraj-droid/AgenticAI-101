@@ -1,9 +1,9 @@
 """Command line interface.
 
+    onboarding serve                     # the demo page on localhost
+    onboarding demo --framework crew     # the same thing in the terminal
     onboarding doctor
     onboarding run --framework lg --record fixtures/customers/valid_smb.json
-    onboarding resume --run-id <id> --decision approve
-    onboarding pending
     onboarding compare
     onboarding concepts --framework maf
     onboarding prompts verify
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Annotated
 
@@ -24,13 +25,13 @@ from onboarding.adapters.base import FRAMEWORKS, get_adapter, load_record
 from onboarding.core.audit import JsonlAuditSink, new_run_id
 from onboarding.core.config import llm_spec, paths
 from onboarding.core.errors import OnboardingError
-from onboarding.core.hitl import ResumeIndex
-from onboarding.core.schemas import ApprovalDecision, OnboardingResult
+from onboarding.core.schemas import OnboardingResult
 
 app = typer.Typer(
-    help="Customer Onboarding Assistant — one core, three frameworks.",
-    no_args_is_help=True,
+    help="Customer Onboarding Assistant — one core, four frameworks.",
+    no_args_is_help=False,
     add_completion=False,
+    invoke_without_command=True,
 )
 prompts_app = typer.Typer(help="Inspect and verify the versioned prompt library.")
 app.add_typer(prompts_app, name="prompts")
@@ -38,6 +39,56 @@ registry_app = typer.Typer(help="Inspect the customer registry (read-only).")
 app.add_typer(registry_app, name="registry")
 
 console = Console()
+
+
+@app.callback()
+def default(ctx: typer.Context) -> None:
+    """Run the demo when no subcommand is given.
+
+    `onboarding` on its own is the friendly entry point; the individual
+    subcommands remain for scripting and CI.
+    """
+    if ctx.invoked_subcommand is None:
+        from onboarding.cli.demo import run_demo
+
+        run_demo()
+
+
+@app.command()
+def demo(
+    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph | crew")] = "langgraph",
+    record: Annotated[str, typer.Option("--record", "-r", help="Fixture name or path")] = "valid_smb",
+) -> None:
+    """Onboard a customer, then chat about them. The one command to see it all."""
+    from onboarding.cli.demo import run_demo
+
+    try:
+        run_demo(framework=framework, record_name=record)
+    except OnboardingError as exc:
+        console.print(f"[red]{type(exc).__name__}[/]: {exc}")
+        raise typer.Exit(code=1) from exc
+
+
+@app.command()
+def serve(
+    host: Annotated[str, typer.Option("--host", help="Interface to bind")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", "-p", help="Port to listen on")] = 8000,
+    send: Annotated[bool, typer.Option("--send", help="Allow real mail delivery (needs SMTP_HOST)")] = False,
+) -> None:
+    """Open the demo page: submit a customer, watch an agent onboard them, then chat.
+
+    Binds to localhost by default. This page runs real onboarding and can send
+    real mail, and none of it is hardened for exposure to a network.
+    """
+    from onboarding.web.app import serve as run_server
+
+    console.print(f"\n  [bold]http://{host}:{port}[/]   (ctrl-c to stop)\n")
+    if send and not os.environ.get("SMTP_HOST"):
+        console.print(
+            "  [yellow]--send is on but SMTP_HOST is not set[/], so mail will still only "
+            "reach the outbox. See .env.example.\n"
+        )
+    run_server(host=host, port=port, allow_send=send)
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +132,7 @@ def doctor() -> None:
     for framework in FRAMEWORKS:
         try:
             adapter = get_adapter(framework)
-            table.add_row(f"Adapter: {framework}", "[green]ok[/]", adapter.capabilities.checkpoint_backend)
+            table.add_row(f"Adapter: {framework}", "[green]ok[/]", adapter.capabilities.notes[:60])
         except Exception as exc:
             table.add_row(f"Adapter: {framework}", "[red]failed[/]", str(exc)[:90])
 
@@ -98,14 +149,14 @@ def doctor() -> None:
 
 
 # ---------------------------------------------------------------------------
-# run / resume
+# run
 # ---------------------------------------------------------------------------
 
 
 @app.command()
 def run(
     record: Annotated[Path, typer.Option("--record", "-r", help="Path to a customer record JSON")],
-    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph")] = "langgraph",
+    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph | crew")] = "langgraph",
     json_out: Annotated[bool, typer.Option("--json", help="Print the full result as JSON")] = False,
     send: Annotated[bool, typer.Option("--send", help="Actually transmit mail (needs SMTP_HOST)")] = False,
 ) -> None:
@@ -123,64 +174,6 @@ def run(
         console.print_json(result.model_dump_json())
     else:
         _print_result(result)
-
-
-@app.command()
-def resume(
-    run_id: Annotated[str, typer.Option("--run-id", help="The run_id printed when the run blocked")],
-    decision: Annotated[str, typer.Option("--decision", help="approve | reject")] = "approve",
-    by: Annotated[str, typer.Option("--by", help="Who is making the decision")] = "cli",
-    note: Annotated[str, typer.Option("--note", help="Optional note recorded in the audit log")] = "",
-) -> None:
-    """Resume a run that paused at the human-approval checkpoint."""
-    if decision not in ("approve", "reject"):
-        console.print("[red]--decision must be 'approve' or 'reject'[/]")
-        raise typer.Exit(code=2)
-
-    entry = ResumeIndex().get(run_id)
-    adapter = get_adapter(entry.framework)
-    try:
-        result = asyncio.run(
-            adapter.resume(
-                run_id,
-                ApprovalDecision(decision=decision, decided_by=by, note=note),  # type: ignore[arg-type]
-            )
-        )
-    except OnboardingError as exc:
-        console.print(f"[red]{type(exc).__name__}[/]: {exc}")
-        raise typer.Exit(code=1) from exc
-    _print_result(result)
-
-
-@app.command()
-def pending() -> None:
-    """List runs waiting on a human decision."""
-    entries = [e for e in ResumeIndex().list() if e.status == "blocked_awaiting_approval"]
-    if not entries:
-        console.print("No runs are waiting for approval.")
-        return
-    table = Table(title="Awaiting human approval")
-    table.add_column("run_id")
-    table.add_column("framework")
-    table.add_column("company")
-    table.add_column("reasons")
-    table.add_column("resumable")
-    for entry in entries:
-        request = entry.approval_request
-        resumable = "[green]yes[/]" if entry.framework != "langchain" else "[red]no (stateless)[/]"
-        table.add_row(
-            entry.run_id,
-            entry.framework,
-            request.company_name if request else entry.record_id,
-            "; ".join(request.reasons) if request else "—",
-            resumable,
-        )
-    console.print(table)
-
-
-# ---------------------------------------------------------------------------
-# compare
-# ---------------------------------------------------------------------------
 
 
 @app.command()
@@ -371,7 +364,7 @@ def audit(
 
 @app.command()
 def chat(
-    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph")] = "langchain",
+    framework: Annotated[str, typer.Option("--framework", "-f", help="maf | langchain | langgraph | crew")] = "langchain",
     record: Annotated[Path | None, typer.Option("--record", "-r", help="Pin the conversation to one customer")] = None,
     ask: Annotated[str | None, typer.Option("--ask", help="Ask one question and exit")] = None,
 ) -> None:
@@ -433,7 +426,11 @@ def registry_show(
     plan: Annotated[str | None, typer.Option("--plan", help="Filter to one plan")] = None,
     reveal: Annotated[bool, typer.Option("--reveal", help="Show real contact details")] = False,
 ) -> None:
-    """Show the customer registry. Contact details are masked unless --reveal."""
+    """Show the customer registry. Phone numbers are masked unless --reveal.
+
+    This is a human's view of the CSV, not the model's — ``core.qa`` is the only
+    thing an agent can reach, and it has no phone number to show at all.
+    """
     from onboarding.core import qa
     from onboarding.core.registry import customers_on_plan, read_all, registry_path
 
@@ -446,12 +443,11 @@ def registry_show(
     for column in ("record_id", "name", "email", "phone", "plan", "company", "registered"):
         table.add_column(column)
     for row in rows:
-        shown = row if reveal else qa.mask_row(row)
         table.add_row(
             row.record_id,
             row.customer_name,
-            shown.email,
-            shown.phone,
+            row.email,
+            row.phone if reveal else _mask_phone(row.phone),
             row.plan,
             row.company_name,
             row.registered_at[:19],
@@ -459,7 +455,15 @@ def registry_show(
     console.print(table)
     console.print(qa.describe_breakdown())
     if not reveal:
-        console.print("[dim]Contact details masked. Pass --reveal to see them.[/]")
+        console.print("[dim]Phone numbers masked. Pass --reveal to see them.[/]")
+
+
+def _mask_phone(phone: str) -> str:
+    """Keep enough to recognise a number, not enough to dial it."""
+    digits = [c for c in phone if c.isdigit()]
+    if len(digits) < 4:
+        return "***" if phone else ""
+    return f"***{''.join(digits[-4:])}"
 
 
 @registry_app.command("export")
@@ -502,7 +506,6 @@ def outbox(
 def _print_result(result: OnboardingResult) -> None:
     colour = {
         "completed": "green",
-        "blocked_awaiting_approval": "yellow",
         "rejected": "red",
         "escalated": "yellow",
         "failed": "red",
@@ -515,7 +518,7 @@ def _print_result(result: OnboardingResult) -> None:
     table.add_row("run_id", result.run_id)
     table.add_row("risk", f"{result.risk.band} ({result.risk.score})")
     if result.risk.reasons:
-        table.add_row("approval reasons", "\n".join(result.risk.reasons))
+        table.add_row("risk reasons", "\n".join(result.risk.reasons))
     table.add_row("findings", ", ".join(f.code for f in result.findings) or "—")
     table.add_row("PII masked", ", ".join(result.pii_entity_types) or "—")
     if result.injection_signals:
@@ -534,24 +537,12 @@ def _print_result(result: OnboardingResult) -> None:
         )
     if result.escalation_queue:
         table.add_row("escalation", "\n".join(result.escalation_queue))
-    table.add_row("resume", result.resume_token or "[red]not resumable[/]")
     console.print(table)
 
     if result.welcome_email:
         console.print(f"\n[bold]Subject:[/] {result.welcome_email.subject}\n")
         console.print(result.welcome_email.body)
 
-    if result.status == "blocked_awaiting_approval":
-        if result.resume_supported:
-            console.print(
-                f"\n[yellow]Waiting for a human.[/] Resume with:\n"
-                f"  onboarding resume --run-id {result.run_id} --decision approve"
-            )
-        else:
-            console.print(
-                "\n[yellow]Waiting for a human.[/] This adapter is stateless and cannot be "
-                "resumed — re-run the record after approval."
-            )
 
 
 if __name__ == "__main__":

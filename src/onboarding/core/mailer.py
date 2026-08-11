@@ -9,11 +9,10 @@ requires all of:
 
 * ``SMTP_HOST`` configured, and
 * ``allow_send=True`` (the CLI's ``--send`` flag), and
-* for the customer-facing message only, a record that has cleared the human
-  approval gate.
+* for the customer-facing message only, a recipient on the allowlist.
 
-That last condition is the important one: the fixtures contain realistic-looking
-addresses, and a demo run must not be able to email a real person.
+That last condition is the important one: a form takes whatever address is typed
+into it, and a demo run must not be able to email a real stranger.
 """
 
 from __future__ import annotations
@@ -35,6 +34,30 @@ from onboarding.core.schemas import CustomerRecord, OnboardingTask, WelcomeEmail
 Audience = Literal["team", "customer"]
 
 
+def support_address() -> str:
+    """Where every internal task list goes. One address, set once."""
+    return os.environ.get("ONBOARDING_SUPPORT_EMAIL", team_address())
+
+
+def allowlist() -> set[str]:
+    """Customer addresses cleared to receive real mail.
+
+    A demo form takes whatever email is typed into it. Without this, a typo
+    sends real mail to a real stranger, and that cannot be undone. Set
+    ONBOARDING_ALLOWED_RECIPIENTS to a comma-separated list; "*" disables the
+    check entirely and is deliberately awkward to type by accident.
+    """
+    raw = os.environ.get("ONBOARDING_ALLOWED_RECIPIENTS", "")
+    return {a.strip().lower() for a in raw.split(",") if a.strip()}
+
+
+def is_allowed(address: str) -> bool:
+    allowed = allowlist()
+    if "*" in allowed:
+        return True
+    return address.strip().lower() in allowed
+
+
 def outbox_dir() -> Path:
     override = os.environ.get("ONBOARDING_OUTBOX")
     return Path(override) if override else paths().runs / "outbox"
@@ -42,6 +65,10 @@ def outbox_dir() -> Path:
 
 def team_address() -> str:
     return os.environ.get("ONBOARDING_TEAM_EMAIL", "onboarding-team@example.internal")
+
+
+def smtp_configured() -> bool:
+    return bool(os.environ.get("SMTP_HOST"))
 
 
 def from_address() -> str:
@@ -106,9 +133,40 @@ def build_team_mail(
 
     return OutboundMail(
         audience="team",
-        to=team_address(),
+        to=support_address(),
         subject=f"[onboarding] {record.company_name} ({record.effective_plan})",
         body="\n".join(lines),
+        record_id=record.record_id,
+        run_id=run_id,
+    )
+
+
+@concept(Concept.ACTION)
+def build_already_registered_mail(record: CustomerRecord, run_id: str) -> OutboundMail:
+    """The duplicate path: tell them they already have an account.
+
+    Deterministic text, no model involved — there is nothing to draft, and a
+    known customer should get a consistent message every time.
+    """
+    body = "\n".join(
+        [
+            f"Hello {record.primary_contact.full_name},",
+            "",
+            f"Thanks for signing up to {record.company_name} again — it looks like you",
+            "already have an account with us, so there is nothing more to do.",
+            "",
+            "If you were expecting a new workspace, or you think this is a mistake,",
+            "just reply to this message and the onboarding team will take a look.",
+            "",
+            "Best regards,",
+            "The Onboarding Team",
+        ]
+    )
+    return OutboundMail(
+        audience="customer",
+        to=str(record.primary_contact.email),
+        subject=f"You are already signed up, {record.company_name}",
+        body=body,
         record_id=record.record_id,
         run_id=run_id,
     )
@@ -163,7 +221,6 @@ def deliver(
     sink: JsonlAuditSink | None = None,
     *,
     allow_send: bool = False,
-    approved: bool = False,
 ) -> DeliveryResult:
     """Write the message to the outbox, and transmit it only if truly permitted."""
     directory = outbox_dir()
@@ -178,8 +235,11 @@ def deliver(
         reason = "written to the outbox; pass --send to transmit"
     elif not host:
         reason = "SMTP_HOST is not set, so nothing was transmitted"
-    elif mail.audience == "customer" and not approved:
-        reason = "customer mail requires an approved record; not transmitted"
+    elif mail.audience == "customer" and not is_allowed(mail.to):
+        reason = (
+            f"{mail.to} is not on ONBOARDING_ALLOWED_RECIPIENTS, so nothing was sent. "
+            "Add the address to send to it for real."
+        )
     else:
         try:
             _transmit(mail, host)

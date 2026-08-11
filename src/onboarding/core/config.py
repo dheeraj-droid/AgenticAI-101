@@ -42,18 +42,6 @@ class Paths:
         return self.runs / "audit.jsonl"
 
     @property
-    def resume_index(self) -> Path:
-        return self.runs / "resume_index.json"
-
-    @property
-    def langgraph_db(self) -> Path:
-        return self.runs / "langgraph.sqlite"
-
-    @property
-    def maf_checkpoints(self) -> Path:
-        return self.runs / "maf_checkpoints"
-
-    @property
     def docs(self) -> Path:
         return self.root / "docs"
 
@@ -70,7 +58,7 @@ def paths() -> Paths:
 
 @dataclass(frozen=True, slots=True)
 class LlmSpec:
-    """One OpenAI-compatible endpoint, shared by all three frameworks."""
+    """One OpenAI-compatible endpoint, shared by all four frameworks."""
 
     base_url: str | None
     model: str | None

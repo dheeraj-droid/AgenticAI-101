@@ -1,51 +1,134 @@
-# AgenticAI-101 — Customer Onboarding Assistant, three frameworks, one core
+# AgenticAI-101 — Customer Onboarding Assistant, four frameworks, one core
 
-A **Customer Onboarding Assistant** that validates a new customer record, drafts a
-welcome email, generates an internal task list and logs the result — implemented
-three times over a **single shared core**:
+A **Customer Onboarding Assistant** that validates a new customer record, checks
+for a duplicate, registers them, mails the customer and the support team, and
+then answers questions about who has been onboarded — implemented four times
+over a **single shared core**:
 
-| | Microsoft Agent Framework | LangChain | LangGraph |
-|---|---|---|---|
-| Shape | executor graph + tools | one tool-using agent | multi-step graph |
-| Branching | 2 switch-case groups + conditional edges | none (agent decides at runtime) | 3 conditional branch points |
-| HITL | `ctx.request_info()` | blocks, cannot resume | `interrupt()` |
-| State | `FileCheckpointStorage` | **none, by design** | `AsyncSqliteSaver` |
-| Resume across processes | yes | **no** | yes |
+| | Microsoft Agent Framework | LangChain | LangGraph | CrewAI |
+|---|---|---|---|---|
+| Shape | executor graph + tools | one tool-using agent | multi-step graph | two-agent crew |
+| Branching | 2 switch-case groups | none (agent decides at runtime) | 2 conditional branch points | none (fixed sequence) |
+| Control flow visible before the run | yes (typed edges) | **no** (agent decides) | yes (graph is data) | partly (fixed order) |
+| LLM agent identities | 1 | 1 | 0 (plain calls) | **2** |
 
-Because all three call the same schemas, rules and pipeline, any difference in
+Because all four call the same schemas, rules and pipeline, any difference in
 output is attributable to the *framework* — not to the business logic. That is
 the entire point.
 
 > **The comparison is enforced, not asserted.** `tests/integration/test_architecture.py`
 > walks the AST of every adapter and fails the build if one grows its own
-> thresholds, regexes or business rules. `test_three_way_parity.py` asserts the
-> three produce byte-identical deterministic outcomes.
+> thresholds, regexes or business rules. `test_three_way_parity.py` asserts they
+> produce byte-identical deterministic outcomes.
 
 ---
 
-## Quick start
+## Demo it in five minutes
+
+### 1. Install
 
 ```bash
+git clone https://github.com/dheeraj-droid/AgenticAI-101.git
+cd AgenticAI-101
 uv sync --extra dev --extra nlp     # nlp = the spaCy model Presidio uses
-uv run onboarding doctor            # check the environment, no model needed
-uv run pytest                       # 310 tests, no API key required
+uv run onboarding doctor            # all four adapters should say ok
 ```
 
-### Point it at a model (free and local)
+`doctor` will report **LLM endpoint: not configured** — that is expected, and
+everything policy-driven still runs. Step 2 fixes it.
 
-Everything above runs without a model. To draft emails you need one
-OpenAI-compatible endpoint — the same config serves all three frameworks:
+### 2. Point it at a model
+
+Any OpenAI-compatible endpoint drives all four frameworks. Free and local:
 
 ```bash
-curl -fsSL https://ollama.com/install.sh | sh
 ollama pull qwen2.5:3b-instruct
 ollama serve
-
 cp .env.example .env                # already set up for Ollama
-uv run onboarding run --framework langgraph --record fixtures/customers/valid_smb.json
 ```
 
-### Any OpenAI-compatible provider
+Or edit `.env` for Groq / Gemini / Anthropic — three variables, no code change.
+
+### 3. Run the page
+
+```bash
+uv run onboarding serve             # http://127.0.0.1:8000
+```
+
+Fill in a customer, pick one of the four frameworks, submit. The agent validates
+the record, checks for a duplicate, registers them, writes the welcome email and
+sends the task list to the support address — and the page shows you every
+message it produced **and whether it was actually transmitted**. Then the chat
+panel opens underneath, backed by the customer registry.
+
+**Submit the same customer twice.** The second run takes the duplicate branch:
+no registration, no model call, and a plain "you already have an account" note
+instead of a welcome email.
+
+**Then switch the framework and submit a different customer.** Same page, same
+form, same pipeline — the only thing that changed is which agent framework ran
+it, which is the whole point.
+
+Things to ask the chat panel:
+
+```
+how many customers are on pro?
+how many tasks are done for Ada?
+what plan is Northwind Trading on?
+what is their phone number?      ← it does not have one, and says so
+add a customer called Bob         ← it cannot write, and says so
+```
+
+### 4. Real mail (optional)
+
+```bash
+# in .env
+SMTP_HOST=smtp.gmail.com
+SMTP_USER=you@gmail.com
+SMTP_PASSWORD=<16-char App Password, spaces removed>
+ONBOARDING_FROM_EMAIL=you@gmail.com
+ONBOARDING_SUPPORT_EMAIL=you+support@gmail.com
+ONBOARDING_ALLOWED_RECIPIENTS=you@gmail.com     # nothing is sent to anyone else
+
+uv run onboarding serve --send
+```
+
+Use your own address in the form. Mail to anything not on
+`ONBOARDING_ALLOWED_RECIPIENTS` is refused, and the page tells you it was
+refused rather than implying it went out. See [Real mail](#real-mail).
+
+### The same thing in the terminal
+
+```bash
+uv run onboarding demo --framework maf
+uv run onboarding demo --framework langchain
+uv run onboarding demo --framework langgraph
+uv run onboarding demo --framework crew
+```
+
+Each onboards a customer, prints the draft, and drops you into a conversation
+about the customer it just processed. `onboarding` with no arguments does the
+same thing with defaults.
+
+### Worth showing off
+
+```bash
+uv run onboarding run -f langgraph -r fixtures/customers/injection_attempt.json
+#   the poisoned notes never reach a model: escalated, 0 model calls, not registered
+
+uv run onboarding run -f crew -r fixtures/customers/invalid_missing_fields.json
+#   a blocking validation error stops the run before drafting, in every framework
+
+uv run onboarding registry show          # the CSV, phone numbers masked
+uv run onboarding outbox                 # every message produced
+uv run onboarding compare                # all four, side by side
+uv run onboarding concepts               # every principle → the code that implements it
+uv run pytest                            # 527 tests, no API key required
+```
+
+---
+
+## Any OpenAI-compatible provider
 
 Nothing in the model wiring names a provider — `core/llm.py` only ever passes
 `base_url`, `model` and `api_key` through. **Switching provider is three
@@ -91,25 +174,20 @@ Perception  →  Planning  →  Action  →  Reflection
    the internal task list.
 4. **Reflection** — run the output validators, repair once, then escalate or ship.
 
-A **human-in-the-loop checkpoint** sits before the email is finalised. If the
-record is high-risk — enterprise tier, contract value over threshold, injection
-detected, or a blocking validation error — the run **pauses, writes an
-`approval_required` audit entry, marks the record BLOCKED and stops**. No email
-is drafted and no tokens are spent.
+**One gate sits before drafting.** A record with blocking validation errors, or
+one carrying a prompt-injection attempt, escalates: it is never drafted from,
+never registered, and costs no model call. Everything else is onboarded
+autonomously.
 
 ```bash
-uv run onboarding run --framework langgraph --record fixtures/customers/enterprise_high_value.json
-# -> blocked_awaiting_approval, prints a run_id
-
-uv run onboarding pending          # what's waiting on a human
-
-# ...later, from a completely different process:
-uv run onboarding resume --run-id <id> --decision approve --by alex
+uv run onboarding run --framework langgraph --record fixtures/customers/injection_attempt.json
+# -> escalated, llm_calls 0, registered no
 ```
 
-The LangChain adapter blocks identically but **cannot** be resumed — it has no
-checkpointer and no thread to return to. That is the stateless/stateful
-distinction made concrete rather than described.
+Risk scoring still runs, and still shapes the plan and the confidence floor — an
+enterprise record gets the `enterprise` strategy and an extra grounding step —
+but a high score is not a veto on its own. The two graphs route on one shared
+predicate, `OnboardingState.must_escalate`, so they cannot drift apart.
 
 ---
 
@@ -120,7 +198,7 @@ team and the customer → answer questions about them.**
 
 ```bash
 uv run onboarding run --framework langgraph --record fixtures/customers/valid_smb.json
-uv run onboarding registry show          # the CSV table, contact details masked
+uv run onboarding registry show          # the CSV table, phone numbers masked
 uv run onboarding outbox                 # the mail that was produced
 uv run onboarding chat --framework maf   # ask questions about who's onboarded
 ```
@@ -139,49 +217,73 @@ onboarding policy keeps speaking tiers while the business speaks plans.
 **Duplicate detection** rides the machinery that already exists rather than
 adding a branch. Same `record_id` or email is a *blocking error* → the run
 escalates and never re-registers. Same company or shared email domain is a
-*warning* → it routes to the human approval gate, because a second team at the
-same company is a legitimate thing to onboard and that call belongs to a person.
+*warning* → it is reported but does not stop the run, because a second team at
+the same company is a legitimate thing to onboard.
 
 A customer is written to the registry **only** on a run that completed cleanly:
-blocked, rejected, escalated and failed-reflection runs all leave the table
-untouched, checked explicitly rather than inferred from call order.
+escalated and failed-reflection runs leave the table untouched, checked
+explicitly rather than inferred from call order.
 
-### Mail
+### Task lists
 
-Nothing is transmitted by default. Both messages are written as real `.eml`
-files to `.runs/outbox/` and logged. Actually sending needs `SMTP_HOST`, *and*
-the `--send` flag, *and* — for the customer-facing message only — a record that
-cleared human approval. The fixtures contain realistic-looking addresses, so a
-demo run must not be able to email a real person.
+Each customer's onboarding checklist is its own CSV at
+`.runs/tasks/<record_id>.csv`, pointed at by a `tasks_path` column on the
+registry row. Every task starts `pending`; `core/tasks.mark()` flips one to
+`completed`. That file is what makes *"how many tasks are done for Ada?"* an
+answerable question — the count is computed in Python and handed to the model as
+a finished sentence, because tallying rows is exactly what a small model gets
+subtly wrong.
+
+### Real mail
+
+Nothing is transmitted by default. Every message is written as a real `.eml`
+file to `.runs/outbox/` and logged. Transmitting one needs **all** of:
+
+1. `SMTP_HOST` configured (Gmail needs an [App Password](https://myaccount.google.com/apppasswords),
+   not your account password — see `.env.example`),
+2. the `--send` flag, and
+3. for anything customer-facing, the recipient on `ONBOARDING_ALLOWED_RECIPIENTS`.
+
+That third condition is the one that matters. A demo form accepts whatever
+address is typed into it, and mail to a stranger cannot be recalled — so the
+allowlist is **empty by default**, which means no customer mail goes anywhere
+until you name an address. Setting it to `*` disables the check, and is
+deliberately awkward to type by accident.
+
+Internal task lists all go to one `ONBOARDING_SUPPORT_EMAIL`.
 
 The welcome email is drafted against `<PERSON_1>` placeholders; the real values
 are substituted back in deterministic code at the last moment before delivery.
 
-### Chat — read-only, all three frameworks
+**The duplicate path still mails.** A returning customer gets a short "you
+already have an account" note — deterministic text, no model involved, because
+there is nothing to draft and a known customer should get the same message every
+time.
+
+### Chat — read-only, all four frameworks
 
 ```bash
 uv run onboarding chat -f langchain                     # a conversation
 uv run onboarding chat -f maf --ask "how many are on pro+?"
+uv run onboarding chat -f crew --ask "how many tasks are done for Ada?"
 uv run onboarding chat -f langgraph -r fixtures/customers/valid_smb.json
 ```
 
-Same system prompt, same tools, three orchestrations: LangChain's native agent
-loop, a LangGraph `agent ↔ tools` graph, and a MAF `Agent` with the tools
-attached.
+Same system prompt, same tools, four orchestrations: LangChain's native agent
+loop, a LangGraph `agent ↔ tools` graph, a MAF `Agent` with the tools attached,
+and a CrewAI crew rebuilt per question — a crew is built to finish a task and
+stop, so it is the one framework here with no native turn loop.
 
 Two properties are enforced by tests, not by prompt wording:
 
 - **The model cannot write.** Every tool it can reach is a pure query. There is
-  no path from any tool to the registry's write path, the mailer or the approval
-  store — `test_chat_readonly.py` walks each tool's call graph and fails the
+  no path from any tool to the registry's write path or the mailer —
+  `test_chat_readonly.py` walks each tool's call graph and fails the
   build if one appears. Ask it to add a customer and it will tell you it can't.
-- **Contact details stay masked.** Names, companies and plans reach the model as
-  ordinary business facts. Emails and phones arrive as `d***@b***.com` and
-  `+44***42`, so "how many people are on the pro plan?" is answerable while a
-  leaked phone number is not possible.
-
-Counting is done in Python and handed to the model as a finished sentence —
-tallying rows is exactly what a small local model gets subtly wrong.
+- **It never has a phone number.** Not masked — *absent*. `VisibleCustomer` has
+  no phone field at all, so there is no code path that could surface one and
+  nothing for a jailbreak to reach. Names, companies, plans and email addresses
+  are ordinary business facts an employee may see, and pass through in full.
 
 ## Business rules are enforced, not requested
 
@@ -216,8 +318,8 @@ the active engine is reported in every run.
 Free-text notes are attacker-controlled. The scanner catches instruction
 overrides, role reassignment, system impersonation, policy bypass, exfiltration
 attempts and unauthorised-discount demands — through unicode obfuscation and
-base64 wrapping. A blocking hit raises risk and forces the record to a human;
-the poisoned text never reaches a model at all.
+base64 wrapping. A blocking hit escalates the record before drafting, so the
+poisoned text never reaches a model at all.
 
 ### Versioned prompt library
 
@@ -232,7 +334,7 @@ uv run onboarding prompts rechecksum   # after an intentional edit
 
 ---
 
-## Comparing the three
+## Comparing the four
 
 ```bash
 uv run onboarding compare
@@ -262,14 +364,16 @@ src/onboarding/
     registry.py      the CSV customer table (queries vs the single write path)
     qa.py            read-only question answering, masking applied
     mailer.py        outbox by default, SMTP strictly opt-in
+    tasks.py         one checklist CSV per customer, with completion status
     steps.py         perceive / plan / act / reflect / register / notify
-    hitl.py          pause, log, stop, resume
   adapters/
     maf/           Microsoft Agent Framework workflow + tools
     lc/            the single LangChain agent
     lg/            the LangGraph graph
-  chat/          the read-only Q&A agent, in all three frameworks
-  cli/           doctor, run, resume, pending, chat, registry, outbox,
+    crew/          the two-agent CrewAI crew
+  chat/          the read-only Q&A agent, in all four frameworks
+  web/           the localhost demo page (FastAPI + one HTML file)
+  cli/           doctor, serve, demo, run, chat, registry, outbox,
                  compare, concepts, prompts, audit
 ```
 
@@ -298,16 +402,18 @@ See [`docs/concepts.md`](docs/concepts.md) for the generated table.
   meta-package, which pulls ~30 provider packages for the same API.
 - **`OpenAIChatCompletionClient`**, not the Responses-API client — Ollama and
   most local servers only implement `/v1/chat/completions`.
-- **`AsyncSqliteSaver`**, not `SqliteSaver`: the sync saver raises on `ainvoke`.
 - **`en_core_web_sm` is not on PyPI** — it installs from a GitHub release wheel
   via the `nlp` extra. Without it the regex PII engine takes over.
-- `adapters/maf/executors.py` deliberately omits `from __future__ import annotations`:
-  `@response_handler` validates the raw `inspect.signature` annotation, so
-  postponed annotations make it reject a valid `WorkflowContext`.
+- **CrewAI is given `provider="openai"` explicitly.** Without it CrewAI infers a
+  provider from the model name, and any name it does not recognise (`qwen2.5:3b`
+  and every other local model) falls through to LiteLLM, which is not a
+  dependency here.
+- **CrewAI telemetry is opted out** before `crewai` is imported. Nothing here
+  should be reporting customer records to a third party.
 
 ## Testing
 
 ```bash
-uv run pytest              # 310 model-free tests
-uv run pytest -m llm       # 38 more, needs an endpoint (skips without one)
+uv run pytest              # 527 model-free tests
+uv run pytest -m llm       # 40 more, needs an endpoint (skips without one)
 ```

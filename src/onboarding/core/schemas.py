@@ -2,7 +2,7 @@
 
 Every framework consumes ``CustomerRecord`` and produces ``OnboardingResult``.
 ``OnboardingResult.deterministic()`` projects out everything an LLM is allowed to
-vary, leaving the part that must be byte-identical across all three — that
+vary, leaving the part that must be byte-identical across all four — that
 projection is what the comparison runner and the golden tests assert on.
 """
 
@@ -21,14 +21,8 @@ Region = Literal["us", "eu", "apac", "other"]
 PlanName = Literal["free", "pro", "pro+"]
 TIER_TO_PLAN: dict[str, PlanName] = {"starter": "free", "growth": "pro", "enterprise": "pro+"}
 Severity = Literal["error", "warning", "info"]
-RunStatus = Literal[
-    "completed",
-    "blocked_awaiting_approval",
-    "rejected",
-    "escalated",
-    "failed",
-]
-Framework = Literal["maf", "langchain", "langgraph"]
+RunStatus = Literal["completed", "escalated", "failed"]
+Framework = Literal["maf", "langchain", "langgraph", "crew"]
 
 # Value objects are frozen; only OnboardingState is mutable.
 _VALUE = ConfigDict(extra="forbid", frozen=True)
@@ -74,7 +68,7 @@ class CommercialTerms(BaseModel):
 
 
 class CustomerRecord(BaseModel):
-    """The shared input schema — identical for all three frameworks."""
+    """The shared input schema — identical for all four frameworks."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -203,7 +197,6 @@ class RiskAssessment(BaseModel):
     score: float = 0.0
     band: Literal["low", "medium", "high"] = "low"
     reasons: list[str] = Field(default_factory=list)
-    requires_human_approval: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -268,34 +261,7 @@ class Reflection(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Human-in-the-loop
-# ---------------------------------------------------------------------------
-
-
-class ApprovalRequest(BaseModel):
-    model_config = _VALUE
-
-    run_id: str
-    record_id: str
-    company_name: str
-    reasons: list[str] = Field(default_factory=list)
-    risk_band: Literal["low", "medium", "high"] = "high"
-    annual_contract_value_usd: Decimal = Decimal(0)
-    draft_subject: str | None = None
-    draft_body: str | None = None
-
-
-class ApprovalDecision(BaseModel):
-    model_config = _VALUE
-
-    decision: Literal["approve", "reject"]
-    decided_by: str = "cli"
-    note: str = ""
-    decided_at: datetime | None = None
-
-
-# ---------------------------------------------------------------------------
-# Output — identical across all three frameworks
+# Output — identical across all four frameworks
 # ---------------------------------------------------------------------------
 
 
@@ -314,7 +280,6 @@ class DeterministicOutcome(BaseModel):
     pii_entity_types: list[str]
     injection_pattern_ids: list[str]
     risk_band: Literal["low", "medium", "high"]
-    requires_human_approval: bool
     plan_goals: list[str]
     rule_task_ids: list[str]
     violation_rule_ids: list[str]
@@ -326,7 +291,7 @@ class DeterministicOutcome(BaseModel):
 
 
 class OnboardingResult(BaseModel):
-    """The shared output schema. All three adapters return exactly this."""
+    """The shared output schema. All four adapters return exactly this."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -356,9 +321,6 @@ class OnboardingResult(BaseModel):
     registered: bool = False
     mail_outbox: list[str] = Field(default_factory=list)
 
-    resume_supported: bool = False
-    resume_token: str | None = None
-
     started_at: datetime | None = None
     finished_at: datetime | None = None
     duration_ms: int = 0
@@ -373,7 +335,6 @@ class OnboardingResult(BaseModel):
             pii_entity_types=sorted(set(self.pii_entity_types)),
             injection_pattern_ids=sorted({s.pattern_id for s in self.injection_signals}),
             risk_band=self.risk.band,
-            requires_human_approval=self.risk.requires_human_approval,
             plan_goals=[s.goal for s in self.plan.steps],
             rule_task_ids=sorted(t.task_id for t in self.tasks if t.origin == "rule"),
             violation_rule_ids=sorted(v.rule_id for v in self.reflection.violations),
@@ -406,7 +367,6 @@ class OnboardingState(BaseModel):
     tasks: list[OnboardingTask] = Field(default_factory=list)
     reflection: Reflection | None = None
 
-    approval_decision: Literal["approve", "reject"] | None = None
     registered: bool = False
     mail_outbox: list[str] = Field(default_factory=list)
     status: RunStatus = "completed"
@@ -424,5 +384,20 @@ class OnboardingState(BaseModel):
         p = self.perception
         return bool(p and any(f.severity == "error" for f in p.findings))
 
-    def requires_human_approval(self) -> bool:
-        return bool(self.risk and self.risk.requires_human_approval)
+    def has_blocking_injection(self) -> bool:
+        p = self.perception
+        return bool(p and any(s.severity == "block" for s in p.injection_signals))
+
+    def must_escalate(self) -> bool:
+        """Can this record be onboarded at all?
+
+        The one gate before drafting. A record with blocking validation errors is
+        not onboardable as-is, and a record carrying a prompt-injection attempt
+        must not reach a model — both stop here rather than being drafted.
+        """
+        return self.has_blocking_errors() or self.has_blocking_injection()
+
+    def is_duplicate(self) -> bool:
+        """Did this record turn out to be someone we already have?"""
+        p = self.perception
+        return bool(p and any(f.code == "ALREADY_REGISTERED" for f in p.findings))

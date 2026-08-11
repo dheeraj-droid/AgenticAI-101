@@ -1,6 +1,6 @@
 """Deterministic validation of a customer record.
 
-Pure function of the record — no model, no I/O. All three frameworks call this,
+Pure function of the record — no model, no I/O. All four frameworks call this,
 so the ``findings`` list is identical across them and is safe to assert on
 exactly in the golden tests.
 """

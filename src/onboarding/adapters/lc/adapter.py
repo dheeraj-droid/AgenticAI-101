@@ -4,10 +4,8 @@ The contrast this adapter exists to draw:
 
 * **Single agent, not a graph.** One ``create_agent`` loop decides its own tool
   order. There is no topology to inspect before the run.
-* **Stateless.** No checkpointer, no thread id. When a record needs human
-  sign-off this adapter blocks and logs exactly like the other two — but it
-  cannot be resumed. ``resume()`` raises ``ResumeNotSupportedError``; the work
-  must be re-run from the start.
+* **Stateless.** No graph, no thread id — the whole run is one call, and the
+  order in which tools fire is only knowable afterwards, from the transcript.
 * **Not trusted to police itself.** The agent has a ``check_business_rules``
   tool, but the adapter re-runs the same validators server-side afterwards.
   An agent that skips its own checks does not get a free pass.
@@ -24,11 +22,8 @@ from onboarding.core import steps
 from onboarding.core.audit import default_sink
 from onboarding.core.concepts import Concept, concept
 from onboarding.core.config import paths
-from onboarding.core.errors import ResumeNotSupportedError
-from onboarding.core.hitl import ResumeIndex, record_approval_required
 from onboarding.core.rules import Capabilities
 from onboarding.core.schemas import (
-    ApprovalDecision,
     CustomerRecord,
     Framework,
     OnboardingResult,
@@ -38,22 +33,18 @@ from onboarding.core.schemas import (
 
 
 class LangChainAdapter:
-    """One tool-using agent, no graph, no durable state."""
+    """One tool-using agent, no graph."""
 
     name: ClassVar[Framework] = "langchain"
     capabilities: ClassVar[Capabilities] = Capabilities(
         multi_step=False,
         conditional_branching=False,
-        hitl_pause=True,
-        durable_resume=False,
         tools=True,
         agent_count="single",
-        statefulness="stateless",
-        checkpoint_backend="none (by design)",
         notes=(
             "The agent picks its own tool order, so the control flow only exists at "
-            "runtime. It can pause for approval but cannot resume: with no checkpointer "
-            "there is no thread to return to."
+            "runtime — there is no topology to inspect before the run, only a transcript "
+            "to read after it."
         ),
         extras={"agent_tools": "6", "graph_nodes": "n/a"},
     )
@@ -61,7 +52,7 @@ class LangChainAdapter:
     def __init__(self, *, allow_send: bool = False) -> None:
         self.allow_send = allow_send
 
-    @concept(Concept.SINGLE_VS_MULTI_AGENT, Concept.STATELESS_VS_STATEFUL, Concept.AGENT_VS_LLM_APP)
+    @concept(Concept.SINGLE_VS_MULTI_AGENT, Concept.AGENT_VS_LLM_APP)
     async def run(
         self, record: CustomerRecord, *, run_id: str, record_path: str | None = None
     ) -> OnboardingResult:
@@ -75,15 +66,9 @@ class LangChainAdapter:
         # deterministic half of the output identical across frameworks.
         state = steps.plan(steps.perceive(state, sink), sink)
 
-        if state.has_blocking_errors():
-            return steps.finalize(steps.escalate(state, sink), sink)
-
-        if state.requires_human_approval():
-            # Same pause-log-stop behaviour as the other two adapters — but the
-            # entry it writes carries no resume handle, because there is none.
-            record_approval_required(
-                state, sink, record_path=record_path, index=ResumeIndex()
-            )
+        if state.must_escalate():
+            state = steps.escalate(state, sink)
+            state = steps.notify_already_registered(state, sink, allow_send=self.allow_send)
             return steps.finalize(state, sink)
 
         state = await self._draft_with_agent(state, sink)
@@ -129,14 +114,6 @@ class LangChainAdapter:
             tool_calls=_count_tool_calls(result),
         )
         return state
-
-    @concept(Concept.STATELESS_VS_STATEFUL)
-    async def resume(self, run_id: str, decision: ApprovalDecision) -> OnboardingResult:
-        raise ResumeNotSupportedError(
-            f"the LangChain adapter is stateless by design, so run {run_id!r} cannot be resumed: "
-            "there is no checkpointer and no thread to return to. Re-run the record from the "
-            "start, or use --framework maf|langgraph, which persist their state."
-        )
 
 
 def _kickoff(state: OnboardingState) -> str:

@@ -1,7 +1,7 @@
 """Planning: least-to-most decomposition, query rewriting, deterministic task list.
 
 The task list is a *pure function of the record*. That is deliberate: it makes
-the internal task list byte-identical across all three frameworks and safe to
+the internal task list byte-identical across all four frameworks and safe to
 assert on exactly. The model may only ever add clearly-marked ``origin="llm"``
 tasks on top, and those are excluded from the equality check.
 """
@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from onboarding.core.concepts import Concept, concept
 from onboarding.core.rules import (
-    APPROVAL_TASK,
     BASE_TASKS,
     PRODUCT_TASKS,
     REGION_TASKS,
@@ -57,7 +56,7 @@ def decompose(record: CustomerRecord, risk: RiskAssessment, findings: list[Findi
     steps: list[PlanStep] = [
         PlanStep(order=1, goal="Validate the customer record against onboarding policy"),
         PlanStep(order=2, goal="Mask personally identifiable information", depends_on=[1]),
-        PlanStep(order=3, goal="Assess onboarding risk and approval requirements", depends_on=[1, 2]),
+        PlanStep(order=3, goal="Assess onboarding risk", depends_on=[1, 2]),
     ]
     if strategy == "remediation":
         steps.append(
@@ -66,7 +65,10 @@ def decompose(record: CustomerRecord, risk: RiskAssessment, findings: list[Findi
         return Plan(steps=steps, rewritten_query=rewrite_query(record, strategy), strategy=strategy)
 
     if strategy == "enterprise":
-        steps.append(PlanStep(order=4, goal="Obtain human approval before customer contact", depends_on=[3]))
+        # High-value work gets an extra grounding pass before anything is written.
+        steps.append(
+            PlanStep(order=4, goal="Re-check the approved commercial terms", depends_on=[3])
+        )
         next_order = 5
     else:
         next_order = 4
@@ -122,9 +124,6 @@ def derive_tasks(record: CustomerRecord, findings: list[Finding], risk: RiskAsse
             template = PRODUCT_TASKS.get(product.lower())
             if template:
                 templates.append(template)
-
-    if risk.requires_human_approval:
-        templates.append(APPROVAL_TASK)
 
     # De-duplicate by task_id, keeping the most urgent occurrence.
     priority_rank = {"p0": 0, "p1": 1, "p2": 2}
