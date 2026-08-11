@@ -28,7 +28,7 @@ the entire point.
 ```bash
 uv sync --extra dev --extra nlp     # nlp = the spaCy model Presidio uses
 uv run onboarding doctor            # check the environment, no model needed
-uv run pytest                       # 301 tests, no API key required
+uv run pytest                       # 310 tests, no API key required
 ```
 
 ### Point it at a model (free and local)
@@ -45,13 +45,31 @@ cp .env.example .env                # already set up for Ollama
 uv run onboarding run --framework langgraph --record fixtures/customers/valid_smb.json
 ```
 
-`.env.example` also carries **Anthropic** and **Gemini** profiles — both expose
-an OpenAI-compatible `/v1/chat/completions`, so switching providers is three
-environment variables and no code change. Gemini's free tier is verified working
-(mind the 5/min and 20/day per-model caps; each chat question costs two calls).
-Gemini **3.x** models are not usable: they require a `thought_signature` on
-function-call parts that the OpenAI-compatible clients don't send, so tool
-calling fails with a 400 — stay on 2.5.
+### Any OpenAI-compatible provider
+
+Nothing in the model wiring names a provider — `core/llm.py` only ever passes
+`base_url`, `model` and `api_key` through. **Switching provider is three
+environment variables and no code change.** `.env.example` carries ready-made
+profiles:
+
+| Profile | Endpoint | Notes |
+|---|---|---|
+| **ollama** (default) | `localhost:11434/v1` | free, fully local, no key |
+| **groq** | `api.groq.com/openai/v1` | free tier, very fast; pick a tool-calling model |
+| **gemini** | `generativelanguage.googleapis.com/v1beta/openai/` | free tier is tight — 5/min, 20/day per model |
+| **anthropic** | `api.anthropic.com/v1/` | paid |
+
+Because each chat question costs two calls (decide the tool, then answer),
+Gemini's free tier runs out quickly — Groq or Ollama are the better choice for
+extended use.
+
+Two provider quirks worth knowing, both found the hard way:
+
+- **Gemini 3.x cannot do tool calling here.** It requires a `thought_signature`
+  on function-call parts that the OpenAI-compatible clients don't send, so it
+  fails with a 400. Gemini **2.5** works fine.
+- **Use a Chat Completions model**, not a Responses-API one — Ollama and most
+  local servers only implement `/v1/chat/completions`.
 
 **There is no stub or fake model anywhere in `src/`.** A missing endpoint raises
 `LlmNotConfiguredError` with instructions. A test enforces this: a silent
@@ -290,6 +308,6 @@ See [`docs/concepts.md`](docs/concepts.md) for the generated table.
 ## Testing
 
 ```bash
-uv run pytest              # 301 model-free tests
+uv run pytest              # 310 model-free tests
 uv run pytest -m llm       # 38 more, needs an endpoint (skips without one)
 ```
