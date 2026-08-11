@@ -1,0 +1,1 @@
+"""The localhost demo page."""

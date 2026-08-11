@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Annotated
 
@@ -67,6 +68,28 @@ def demo(
     except OnboardingError as exc:
         console.print(f"[red]{type(exc).__name__}[/]: {exc}")
         raise typer.Exit(code=1) from exc
+
+
+@app.command()
+def serve(
+    host: Annotated[str, typer.Option("--host", help="Interface to bind")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", "-p", help="Port to listen on")] = 8000,
+    send: Annotated[bool, typer.Option("--send", help="Allow real mail delivery (needs SMTP_HOST)")] = False,
+) -> None:
+    """Open the demo page: submit a customer, watch an agent onboard them, then chat.
+
+    Binds to localhost by default. This page runs real onboarding and can send
+    real mail, and none of it is hardened for exposure to a network.
+    """
+    from onboarding.web.app import serve as run_server
+
+    console.print(f"\n  [bold]http://{host}:{port}[/]   (ctrl-c to stop)\n")
+    if send and not os.environ.get("SMTP_HOST"):
+        console.print(
+            "  [yellow]--send is on but SMTP_HOST is not set[/], so mail will still only "
+            "reach the outbox. See .env.example.\n"
+        )
+    run_server(host=host, port=port, allow_send=send)
 
 
 @app.command()
@@ -473,7 +496,11 @@ def registry_show(
     plan: Annotated[str | None, typer.Option("--plan", help="Filter to one plan")] = None,
     reveal: Annotated[bool, typer.Option("--reveal", help="Show real contact details")] = False,
 ) -> None:
-    """Show the customer registry. Contact details are masked unless --reveal."""
+    """Show the customer registry. Phone numbers are masked unless --reveal.
+
+    This is a human's view of the CSV, not the model's — ``core.qa`` is the only
+    thing an agent can reach, and it has no phone number to show at all.
+    """
     from onboarding.core import qa
     from onboarding.core.registry import customers_on_plan, read_all, registry_path
 
@@ -486,12 +513,11 @@ def registry_show(
     for column in ("record_id", "name", "email", "phone", "plan", "company", "registered"):
         table.add_column(column)
     for row in rows:
-        shown = row if reveal else qa.mask_row(row)
         table.add_row(
             row.record_id,
             row.customer_name,
-            shown.email,
-            shown.phone,
+            row.email,
+            row.phone if reveal else _mask_phone(row.phone),
             row.plan,
             row.company_name,
             row.registered_at[:19],
@@ -499,7 +525,15 @@ def registry_show(
     console.print(table)
     console.print(qa.describe_breakdown())
     if not reveal:
-        console.print("[dim]Contact details masked. Pass --reveal to see them.[/]")
+        console.print("[dim]Phone numbers masked. Pass --reveal to see them.[/]")
+
+
+def _mask_phone(phone: str) -> str:
+    """Keep enough to recognise a number, not enough to dial it."""
+    digits = [c for c in phone if c.isdigit()]
+    if len(digits) < 4:
+        return "***" if phone else ""
+    return f"***{''.join(digits[-4:])}"
 
 
 @registry_app.command("export")

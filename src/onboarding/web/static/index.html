@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customer Onboarding Assistant</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --line: #2a2f3a;
+    --text: #e6e9ef;
+    --dim: #949cad;
+    --accent: #6ea8fe;
+    --good: #5fd68a;
+    --warn: #f0c674;
+    --bad: #f08a8a;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 22px 28px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+  }
+  h1 { font-size: 19px; margin: 0; font-weight: 620; }
+  .sub { color: var(--dim); font-size: 13px; }
+  main { display: grid; grid-template-columns: 380px 1fr; gap: 0; align-items: start; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .col { padding: 22px 28px; }
+  .col.left { border-right: 1px solid var(--line); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .09em;
+       color: var(--dim); margin: 0 0 14px; font-weight: 600; }
+  label { display: block; font-size: 12px; color: var(--dim); margin: 12px 0 4px; }
+  input, select, textarea {
+    width: 100%; padding: 8px 10px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 7px; font: inherit; font-size: 14px;
+  }
+  textarea { resize: vertical; min-height: 62px; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button {
+    margin-top: 18px; width: 100%; padding: 10px; border-radius: 7px; border: 0;
+    background: var(--accent); color: #0b1220; font: inherit; font-weight: 640; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 16px 18px; margin-bottom: 14px;
+  }
+  .card h3 { margin: 0 0 10px; font-size: 14px; font-weight: 620; }
+  .headline { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+  .headline.registered { color: var(--good); }
+  .headline.duplicate { color: var(--warn); }
+  .headline.needs_approval, .headline.blocked { color: var(--bad); }
+  .meta { color: var(--dim); font-size: 12.5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip {
+    font-size: 11.5px; padding: 2px 8px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--dim);
+  }
+  ul { margin: 8px 0 0; padding-left: 18px; }
+  li { margin: 3px 0; }
+  .mail { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+  .mail:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  .mail .to { color: var(--dim); font-size: 12.5px; }
+  pre {
+    white-space: pre-wrap; word-wrap: break-word; margin: 8px 0 0;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px;
+    padding: 11px 13px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .sent { color: var(--good); }
+  .unsent { color: var(--warn); }
+  #chat { display: none; }
+  #log { max-height: 340px; overflow-y: auto; }
+  .turn { margin-bottom: 12px; }
+  .turn .q { font-weight: 600; }
+  .turn .a { white-space: pre-wrap; }
+  .turn .tools { color: var(--dim); font-size: 11.5px; margin-top: 3px; }
+  .ask { display: flex; gap: 8px; margin-top: 12px; }
+  .ask input { flex: 1; }
+  .ask button { margin: 0; width: auto; padding: 8px 18px; }
+  .err { color: var(--bad); font-size: 13px; margin-top: 10px; white-space: pre-wrap; }
+  .empty { color: var(--dim); font-size: 13.5px; }
+  .banner {
+    font-size: 12.5px; color: var(--dim); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 7px; padding: 9px 12px; margin-bottom: 16px;
+  }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Customer Onboarding Assistant</h1>
+  <span class="sub">the same workflow in four agent frameworks</span>
+</header>
+
+<main>
+  <section class="col left">
+    <h2>New customer</h2>
+    <div id="banner" class="banner">checking configuration…</div>
+    <form id="form" autocomplete="off">
+      <label for="framework">Framework</label>
+      <select id="framework" name="framework"></select>
+      <div id="framework-note" class="meta" style="margin-top:6px"></div>
+
+      <label for="company_name">Company</label>
+      <input id="company_name" name="company_name" required value="Northwind Trading">
+
+      <label for="full_name">Contact name</label>
+      <input id="full_name" name="full_name" required value="Ada Lovelace">
+
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required value="ada@northwind.example">
+
+      <label for="phone">Phone <span class="meta">(never shown to the model)</span></label>
+      <input id="phone" name="phone" value="+44 20 7946 0142">
+
+      <div class="row">
+        <div>
+          <label for="plan">Plan</label>
+          <select id="plan" name="plan">
+            <option>free</option><option selected>pro</option><option>pro+</option>
+          </select>
+        </div>
+        <div>
+          <label for="region">Region</label>
+          <select id="region" name="region">
+            <option>us</option><option>eu</option><option>apac</option><option>other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="annual_contract_value_usd">Annual value (USD)</label>
+          <input id="annual_contract_value_usd" name="annual_contract_value_usd" value="12000">
+        </div>
+        <div>
+          <label for="term_months">Term (months)</label>
+          <input id="term_months" name="term_months" value="12">
+        </div>
+      </div>
+
+      <label for="products">Products <span class="meta">(comma separated)</span></label>
+      <input id="products" name="products" value="core, analytics">
+
+      <label for="signup_notes">Signup notes</label>
+      <textarea id="signup_notes" name="signup_notes">Wants to be live before the end of the quarter.</textarea>
+
+      <button id="submit" type="submit">Onboard</button>
+      <div id="form-error" class="err"></div>
+    </form>
+  </section>
+
+  <section class="col right">
+    <h2>Result</h2>
+    <div id="result"><div class="card empty">Submit the form and the agent will validate the
+      record, check for a duplicate, register the customer and write the mail.</div></div>
+
+    <div id="chat">
+      <h2>Ask about the customers</h2>
+      <div class="card">
+        <div id="log"><div class="empty">The agent can read the customer registry and each
+          customer's task list — nothing else, and never a phone number. Try
+          <em>how many tasks are done for them?</em> or <em>how many customers are on pro?</em></div></div>
+        <form class="ask" id="ask">
+          <input id="question" placeholder="Ask a question…" autocomplete="off">
+          <button type="submit">Ask</button>
+        </form>
+        <div id="chat-error" class="err"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let sessionId = null;
+let config = null;
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+async function api(path, body) {
+  const response = await fetch(path, {
+    method: body ? "POST" : "GET",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail ? JSON.stringify(data.detail) : response.statusText);
+  return data;
+}
+
+async function loadConfig() {
+  config = await api("/api/config");
+  const select = $("framework");
+  select.innerHTML = config.frameworks
+    .map((f) => `<option value="${esc(f.id)}">${esc(f.label)}</option>`).join("");
+  select.value = "langgraph";
+  showNote();
+  select.addEventListener("change", showNote);
+
+  const bits = [];
+  bits.push(config.llm.configured
+    ? `model: ${esc(config.llm.model)}`
+    : `<span class="unsent">no model configured — drafting will fail</span>`);
+  if (config.mail.sending) {
+    const approved = config.mail.approved_recipients;
+    bits.push(approved.includes("*")
+      ? `<span class="sent">sending real mail to any address</span>`
+      : `<span class="sent">sending real mail</span> to ${approved.length} approved address(es)`);
+  } else if (config.mail.allow_send) {
+    bits.push(`<span class="unsent">--send is on but SMTP_HOST is not set</span> — outbox only`);
+  } else {
+    bits.push(`writing to the outbox only — restart with <code>--send</code> to transmit`);
+  }
+  bits.push(`task lists to ${esc(config.mail.support_address)}`);
+  $("banner").innerHTML = bits.join(" &middot; ");
+}
+
+function showNote() {
+  const chosen = config.frameworks.find((f) => f.id === $("framework").value);
+  $("framework-note").textContent = chosen ? chosen.note : "";
+}
+
+$("form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  $("form-error").textContent = "";
+  $("submit").disabled = true;
+  $("submit").textContent = "Running…";
+  $("result").innerHTML = `<div class="card empty">The agent is working. A first run loads the
+    PII model, so give it a moment.</div>`;
+  try {
+    const payload = Object.fromEntries(new FormData($("form")).entries());
+    const result = await api("/api/onboard", payload);
+    sessionId = result.session_id;
+    renderResult(result);
+    $("chat").style.display = "block";
+  } catch (error) {
+    $("form-error").textContent = error.message;
+    $("result").innerHTML = `<div class="card empty">Nothing to show — the run did not finish.</div>`;
+  } finally {
+    $("submit").disabled = false;
+    $("submit").textContent = "Onboard";
+  }
+});
+
+function renderResult(r) {
+  const chips = [
+    `risk: ${esc(r.risk_band)}`,
+    `${r.tasks.length} task(s)`,
+    `${r.llm_calls} model call(s)`,
+    `${r.duration_ms} ms`,
+  ];
+  if (r.pii_entity_types.length) chips.push(`PII masked: ${esc(r.pii_entity_types.join(", "))}`);
+  if (r.injection_signals.length) chips.push(`injection: ${esc(r.injection_signals.join(", "))}`);
+
+  let html = `<div class="card">
+    <p class="headline ${esc(r.outcome)}">${esc(r.headline)}</p>
+    <div class="meta">${esc(r.company_name)} &middot; ${esc(r.contact_name)} &middot;
+      ${esc(r.plan)} plan &middot; ${esc(r.record_id)} &middot; status ${esc(r.status)}</div>
+    <div class="chips">${chips.map((c) => `<span class="chip">${c}</span>`).join("")}</div>`;
+  if (r.findings.length) {
+    html += `<ul>${r.findings.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>`;
+  }
+  if (r.escalation_queue.length) {
+    html += `<ul>${r.escalation_queue.map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`;
+  }
+  html += `</div>`;
+
+  if (r.mail.length) {
+    html += `<div class="card"><h3>Mail</h3>` + r.mail.map((m) => `
+      <div class="mail">
+        <div><strong>${esc(m.subject)}</strong></div>
+        <div class="to">to ${esc(m.to)} (${esc(m.audience)}) &middot;
+          <span class="${m.transmitted ? "sent" : "unsent"}">
+            ${m.transmitted ? "sent" : "not sent"}</span>
+          — ${esc(m.reason)}</div>
+        <pre>${esc(m.body)}</pre>
+      </div>`).join("") + `</div>`;
+  }
+
+  if (r.tasks.length) {
+    html += `<div class="card"><h3>Task list</h3><ul>` + r.tasks.map((t) => `
+      <li>[${t.status === "completed" ? "x" : " "}] ${esc(t.title)}
+        <span class="meta">— ${esc(t.owner_role)}, ${esc(t.priority)},
+        due in ${t.due_offset_days}d</span></li>`).join("") + `</ul></div>`;
+  }
+  $("result").innerHTML = html;
+}
+
+$("ask").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const question = $("question").value.trim();
+  if (!question || !sessionId) return;
+  $("chat-error").textContent = "";
+  $("question").value = "";
+  const turn = document.createElement("div");
+  turn.className = "turn";
+  turn.innerHTML = `<div class="q">${esc(question)}</div><div class="a meta">thinking…</div>`;
+  if ($("log").querySelector(".empty")) $("log").innerHTML = "";
+  $("log").appendChild(turn);
+  $("log").scrollTop = $("log").scrollHeight;
+  try {
+    const reply = await api("/api/chat", { session_id: sessionId, question });
+    turn.querySelector(".a").classList.remove("meta");
+    turn.querySelector(".a").textContent = reply.answer;
+    if (reply.tool_calls.length) {
+      const tools = document.createElement("div");
+      tools.className = "tools";
+      tools.textContent = "tools: " + reply.tool_calls.join(", ");
+      turn.appendChild(tools);
+    }
+  } catch (error) {
+    turn.querySelector(".a").textContent = "";
+    $("chat-error").textContent = error.message;
+  }
+  $("log").scrollTop = $("log").scrollHeight;
+});
+
+loadConfig().catch((error) => { $("banner").textContent = error.message; });
+</script>
+</body>
+</html>

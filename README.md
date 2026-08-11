@@ -1,25 +1,27 @@
-# AgenticAI-101 — Customer Onboarding Assistant, three frameworks, one core
+# AgenticAI-101 — Customer Onboarding Assistant, four frameworks, one core
 
-A **Customer Onboarding Assistant** that validates a new customer record, drafts a
-welcome email, generates an internal task list and logs the result — implemented
-three times over a **single shared core**:
+A **Customer Onboarding Assistant** that validates a new customer record, checks
+for a duplicate, registers them, mails the customer and the support team, and
+then answers questions about who has been onboarded — implemented four times
+over a **single shared core**:
 
-| | Microsoft Agent Framework | LangChain | LangGraph |
-|---|---|---|---|
-| Shape | executor graph + tools | one tool-using agent | multi-step graph |
-| Branching | 2 switch-case groups + conditional edges | none (agent decides at runtime) | 3 conditional branch points |
-| HITL | `ctx.request_info()` | blocks, cannot resume | `interrupt()` |
-| State | `FileCheckpointStorage` | **none, by design** | `AsyncSqliteSaver` |
-| Resume across processes | yes | **no** | yes |
+| | Microsoft Agent Framework | LangChain | LangGraph | CrewAI |
+|---|---|---|---|---|
+| Shape | executor graph + tools | one tool-using agent | multi-step graph | two-agent crew |
+| Branching | 2 switch-case groups + conditional edges | none (agent decides at runtime) | 3 conditional branch points | none (fixed sequence) |
+| HITL | `ctx.request_info()` | blocks, cannot resume | `interrupt()` | blocks, cannot resume |
+| State | `FileCheckpointStorage` | **none, by design** | `AsyncSqliteSaver` | **none** (`memory=False`) |
+| Resume across processes | yes | **no** | yes | **no** |
+| LLM agent identities | 1 | 1 | 0 (plain calls) | **2** |
 
-Because all three call the same schemas, rules and pipeline, any difference in
+Because all four call the same schemas, rules and pipeline, any difference in
 output is attributable to the *framework* — not to the business logic. That is
 the entire point.
 
 > **The comparison is enforced, not asserted.** `tests/integration/test_architecture.py`
 > walks the AST of every adapter and fails the build if one grows its own
-> thresholds, regexes or business rules. `test_three_way_parity.py` asserts the
-> three produce byte-identical deterministic outcomes.
+> thresholds, regexes or business rules. `test_three_way_parity.py` asserts they
+> produce byte-identical deterministic outcomes.
 
 ---
 
@@ -28,28 +30,41 @@ the entire point.
 ```bash
 uv sync --extra dev --extra nlp     # nlp = the spaCy model Presidio uses
 uv run onboarding doctor            # check the environment, no model needed
-uv run pytest                       # 481 tests, no API key required
+uv run pytest                       # 583 tests, no API key required
 ```
 
-### See it work — one command per agent
+### The web page
+
+```bash
+uv run onboarding serve             # http://127.0.0.1:8000
+```
+
+One page: fill in a customer, pick one of the four frameworks, submit. The agent
+validates the record, checks for a duplicate, registers them, writes the welcome
+email and sends the task list to the support address — and the page shows you
+each message it produced and whether it was actually transmitted. Then the chat
+panel opens underneath, backed by the customer registry.
+
+Add `--send` to transmit for real; see [Real mail](#real-mail) first, because
+nothing is sent until an address is explicitly approved.
+
+### Or one command per agent, in the terminal
 
 ```bash
 uv run onboarding demo --framework maf
 uv run onboarding demo --framework langchain
 uv run onboarding demo --framework langgraph
+uv run onboarding demo --framework crew
 ```
 
-Each onboards a customer — validates, masks PII, drafts the welcome email,
-builds the task list, registers them, writes the mail — prints the draft, and
-then drops you into a conversation about the customer it just processed. Run all
-three and you have watched the same workflow in all three frameworks.
-
-`onboarding` with no arguments does the same thing with defaults.
+Each onboards a customer, prints the draft, and drops you into a conversation
+about the customer it just processed. `onboarding` with no arguments does the
+same thing with defaults.
 
 ### Point it at a model (free and local)
 
 Everything above runs without a model. To draft emails you need one
-OpenAI-compatible endpoint — the same config serves all three frameworks:
+OpenAI-compatible endpoint — the same config serves all four frameworks:
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
@@ -135,7 +150,7 @@ team and the customer → answer questions about them.**
 
 ```bash
 uv run onboarding run --framework langgraph --record fixtures/customers/valid_smb.json
-uv run onboarding registry show          # the CSV table, contact details masked
+uv run onboarding registry show          # the CSV table, phone numbers masked
 uv run onboarding outbox                 # the mail that was produced
 uv run onboarding chat --framework maf   # ask questions about who's onboarded
 ```
@@ -161,28 +176,55 @@ A customer is written to the registry **only** on a run that completed cleanly:
 blocked, rejected, escalated and failed-reflection runs all leave the table
 untouched, checked explicitly rather than inferred from call order.
 
-### Mail
+### Task lists
 
-Nothing is transmitted by default. Both messages are written as real `.eml`
-files to `.runs/outbox/` and logged. Actually sending needs `SMTP_HOST`, *and*
-the `--send` flag, *and* — for the customer-facing message only — a record that
-cleared human approval. The fixtures contain realistic-looking addresses, so a
-demo run must not be able to email a real person.
+Each customer's onboarding checklist is its own CSV at
+`.runs/tasks/<record_id>.csv`, pointed at by a `tasks_path` column on the
+registry row. Every task starts `pending`; `core/tasks.mark()` flips one to
+`completed`. That file is what makes *"how many tasks are done for Ada?"* an
+answerable question — the count is computed in Python and handed to the model as
+a finished sentence, because tallying rows is exactly what a small model gets
+subtly wrong.
+
+### Real mail
+
+Nothing is transmitted by default. Every message is written as a real `.eml`
+file to `.runs/outbox/` and logged. Transmitting one needs **all** of:
+
+1. `SMTP_HOST` configured (Gmail needs an [App Password](https://myaccount.google.com/apppasswords),
+   not your account password — see `.env.example`),
+2. the `--send` flag, and
+3. for anything customer-facing, the recipient on `ONBOARDING_ALLOWED_RECIPIENTS`.
+
+That third condition is the one that matters. A demo form accepts whatever
+address is typed into it, and mail to a stranger cannot be recalled — so the
+allowlist is **empty by default**, which means no customer mail goes anywhere
+until you name an address. Setting it to `*` disables the check, and is
+deliberately awkward to type by accident.
+
+Internal task lists all go to one `ONBOARDING_SUPPORT_EMAIL`.
 
 The welcome email is drafted against `<PERSON_1>` placeholders; the real values
 are substituted back in deterministic code at the last moment before delivery.
 
-### Chat — read-only, all three frameworks
+**The duplicate path still mails.** A returning customer gets a short "you
+already have an account" note — deterministic text, no model involved, because
+there is nothing to draft and a known customer should get the same message every
+time.
+
+### Chat — read-only, all four frameworks
 
 ```bash
 uv run onboarding chat -f langchain                     # a conversation
 uv run onboarding chat -f maf --ask "how many are on pro+?"
+uv run onboarding chat -f crew --ask "how many tasks are done for Ada?"
 uv run onboarding chat -f langgraph -r fixtures/customers/valid_smb.json
 ```
 
-Same system prompt, same tools, three orchestrations: LangChain's native agent
-loop, a LangGraph `agent ↔ tools` graph, and a MAF `Agent` with the tools
-attached.
+Same system prompt, same tools, four orchestrations: LangChain's native agent
+loop, a LangGraph `agent ↔ tools` graph, a MAF `Agent` with the tools attached,
+and a CrewAI crew rebuilt per question — a crew is built to finish a task and
+stop, so it is the one framework here with no native turn loop.
 
 Two properties are enforced by tests, not by prompt wording:
 
@@ -190,13 +232,10 @@ Two properties are enforced by tests, not by prompt wording:
   no path from any tool to the registry's write path, the mailer or the approval
   store — `test_chat_readonly.py` walks each tool's call graph and fails the
   build if one appears. Ask it to add a customer and it will tell you it can't.
-- **Contact details stay masked.** Names, companies and plans reach the model as
-  ordinary business facts. Emails and phones arrive as `d***@b***.com` and
-  `+44***42`, so "how many people are on the pro plan?" is answerable while a
-  leaked phone number is not possible.
-
-Counting is done in Python and handed to the model as a finished sentence —
-tallying rows is exactly what a small local model gets subtly wrong.
+- **It never has a phone number.** Not masked — *absent*. `VisibleCustomer` has
+  no phone field at all, so there is no code path that could surface one and
+  nothing for a jailbreak to reach. Names, companies, plans and email addresses
+  are ordinary business facts an employee may see, and pass through in full.
 
 ## Business rules are enforced, not requested
 
@@ -247,7 +286,7 @@ uv run onboarding prompts rechecksum   # after an intentional edit
 
 ---
 
-## Comparing the three
+## Comparing the four
 
 ```bash
 uv run onboarding compare
@@ -277,15 +316,18 @@ src/onboarding/
     registry.py      the CSV customer table (queries vs the single write path)
     qa.py            read-only question answering, masking applied
     mailer.py        outbox by default, SMTP strictly opt-in
+    tasks.py         one checklist CSV per customer, with completion status
     steps.py         perceive / plan / act / reflect / register / notify
     hitl.py          pause, log, stop, resume
   adapters/
     maf/           Microsoft Agent Framework workflow + tools
     lc/            the single LangChain agent
     lg/            the LangGraph graph
-  chat/          the read-only Q&A agent, in all three frameworks
-  cli/           doctor, run, resume, pending, chat, registry, outbox,
-                 compare, concepts, prompts, audit
+    crew/          the two-agent CrewAI crew
+  chat/          the read-only Q&A agent, in all four frameworks
+  web/           the localhost demo page (FastAPI + one HTML file)
+  cli/           doctor, serve, demo, run, resume, pending, chat, registry,
+                 outbox, compare, concepts, prompts, audit
 ```
 
 Every adapter node is a wrapper: unpack state → call one `core` function → pack
@@ -323,6 +365,6 @@ See [`docs/concepts.md`](docs/concepts.md) for the generated table.
 ## Testing
 
 ```bash
-uv run pytest              # 310 model-free tests
+uv run pytest              # 583 model-free tests
 uv run pytest -m llm       # 38 more, needs an endpoint (skips without one)
 ```
