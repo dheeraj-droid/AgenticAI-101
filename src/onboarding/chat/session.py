@@ -158,13 +158,15 @@ class MafChat:
             instructions=prompt,
             tools=list(READ_ONLY_TOOLS),
         )
-        self._thread: Any = None
+        # MAF carries conversation history in a session object, created once and
+        # passed to every run — the framework's equivalent of the message list
+        # the other two thread through by hand.
+        self._session = self._agent.create_session()
         self._sink = sink
 
     @concept(Concept.ACTION, Concept.SINGLE_VS_MULTI_AGENT)
     async def ask(self, question: str) -> Turn:
-        response = await self._agent.run(question, thread=self._thread)
-        self._thread = getattr(response, "thread", self._thread)
+        response = await self._agent.run(question, session=self._session)
         answer = str(getattr(response, "text", "") or response)
         return Turn(question=question, answer=answer, tool_calls=_maf_tool_names(response))
 
@@ -219,10 +221,17 @@ def _tool_names(messages: list[Any]) -> list[str]:
 
 
 def _maf_tool_names(response: Any) -> list[str]:
+    """Pull tool names out of a MAF response.
+
+    Content items are discriminated by a ``type`` field ("function_call"),
+    not by their Python class, so match on that.
+    """
     names: list[str] = []
     for message in getattr(response, "messages", None) or []:
         for content in getattr(message, "contents", None) or []:
+            if getattr(content, "type", None) != "function_call":
+                continue
             name = getattr(content, "name", None)
-            if name and type(content).__name__.startswith("FunctionCall"):
+            if name:
                 names.append(name)
     return names
